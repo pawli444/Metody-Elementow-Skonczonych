@@ -566,7 +566,7 @@ int main() {
     cout << "SpecificHeat: " << globalData.SpecificHeat << "\n";
     cout << "Nodes (global): " << globalData.nN << "\tElements (global): " << globalData.nE << "\n\n";
 
-    // Wypisz wêz³y i elementy (krótkie)
+    // Wypisz wêz³y i elementy
     cout << "Wspolrzedne wezlow:\n";
     for (const auto& n : grid.nodes)
         cout << "ID: " << n.id << "\tX: " << n.x << "\tY: " << n.y << "\n";
@@ -582,8 +582,8 @@ int main() {
     for (int n : grid.boundaryNodes) cout << n << " ";
     cout << "\n\n";
 
-    // U¿ywaj eUniv.npc (to jedyne Ÿród³o liczby punktów ca³kowania)
-    ElemUniv eUniv(globalData.npc); // albo ElemUniv eUniv(2); jeœli chcesz jawnie 2
+
+    ElemUniv eUniv(globalData.npc); 
     int npc = eUniv.npc;
 
     // Przygotuj globaln¹ macierz H (jeœli bêdziesz j¹ sk³adaæ)
@@ -592,18 +592,18 @@ int main() {
     // Dla ka¿dego elementu: policz Jakobiany i H
     for (auto& elem : grid.elements) {
         elem.jakobiany.clear();
-        // policz Jakobiany dla punktów ca³kowania
+        
         for (int p = 0; p < npc * npc; ++p) {
             Jakobian J(elem, grid, eUniv, p);
-            // opcjonalnie: sprawdŸ detJ
+           
             if (fabs(J.detJ) < 1e-12) {
                 cerr << "Warning: detJ bliski 0 w elemencie " << elem.id << " przy pc=" << p << "\n";
             }
             elem.jakobiany.push_back(J);
-             J.coutJakobian(); // odkomentuj tylko do debugu
+             J.coutJakobian(); 
         }
 
-        // Wypisz dane tylko dla tego elementu (czytelniej)
+       
         cout << fixed << setprecision(6);
         cout << "\nElement " << elem.id << "\n";
         cout << "Node coords (N1..N4):\n";
@@ -629,7 +629,7 @@ int main() {
             cout << "\n";
         }
 
-        // Oblicz lokalne H elementu (raz)
+       
         elem.obliczH(eUniv, grid, globalData.Conductivity);
 
         // Wypisz macierz H elementu
@@ -643,7 +643,7 @@ int main() {
             cout << endl;
         }
 
-        // Z³ó¿ do Hglobal (opcjonalnie)
+        
         for (int a = 0; a < 4; ++a) {
             int gi = elem.ID[a] - 1;
             for (int b = 0; b < 4; ++b) {
@@ -651,9 +651,9 @@ int main() {
                 Hglobal[gi][gj] += elem.H[a][b];
             }
         }
-    } // koniec pêtli po elementach
+    } 
 
-    // Opcjonalnie: wypisz Hglobal
+    
     printMatrix(Hglobal, "Globalna macierz H:");
 
     return 0;
