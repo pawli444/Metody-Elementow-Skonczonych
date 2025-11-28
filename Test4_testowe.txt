@@ -1,0 +1,19 @@
+SimulationTime 500
+SimulationStepTime 50
+Conductivity 30
+Alfa 300
+Tot 1200
+InitialTemp 100
+Density 7800
+SpecificHeat 700
+Nodes number 4
+Elements number 1
+*Node
+      1, 0.000000, 0.000000
+      2, 0.025000, 0.000000
+      3, 0.025000, 0.025000
+      4, 0.000000, 0.025000
+*Element, type=DC2D4
+ 1, 1, 2, 3, 4
+*BC
+1, 2, 3, 4
