@@ -123,7 +123,8 @@ class Node {
 public:
     int id;
     double x, y;
-    Node(int id = 0, double x = 0, double y = 0) : id(id), x(x), y(y) {}
+    int BC;
+    Node(int id = 0, double x = 0, double y = 0, int BC = 0) : id(id), x(x), y(y), BC(BC) {}
 };
 
 class ElemUniv {
@@ -184,6 +185,42 @@ public:
 
 };
 
+class Surface {
+public:
+    int npc;
+    GaussQuadrature gauss;
+    vector<vector<vector<double>>> N;
+
+    Surface(int npc) : npc(npc), gauss(npc)
+    {
+        N.resize(4); 
+        for (int e = 0; e < 4; e++)
+            N[e].resize(npc, vector<double>(4, 0.0));
+
+        for (int p = 0; p < npc; p++)
+        {
+            double s = gauss.xi[p];
+
+            
+            N[0][p][0] = 0.5 * (1 - s);
+            N[0][p][1] = 0.5 * (1 + s);
+
+          
+            N[1][p][1] = 0.5 * (1 - s);
+            N[1][p][2] = 0.5 * (1 + s);
+
+           
+            N[2][p][2] = 0.5 * (1 - s);
+            N[2][p][3] = 0.5 * (1 + s);
+
+            
+            N[3][p][3] = 0.5 * (1 - s);
+            N[3][p][0] = 0.5 * (1 + s);
+        }
+    }
+};
+
+
 
 class Jakobian {
 public:
@@ -212,6 +249,7 @@ public:
 
 
     void coutJakobian() {
+        
         std::cout << "Macierz J:\n";
         std::cout << "[" << J[0][0] << ", " << J[0][1] << "]\n";
         std::cout << "[" << J[1][0] << ", " << J[1][1] << "]\n";
@@ -226,8 +264,18 @@ public:
             std::cout << "dN_dx[" << i << "] = " << dN_dx[i]
                 << ", dN_dy[" << i << "] = " << dN_dy[i] << "\n";
         }
+
+        std::cout << endl;
+    }
+
+
+    void samJakobian() {
+        std::cout << "[" << J[0][0] << ", " << J[0][1] << "]\n";
+        std::cout << "[" << J[1][0] << ", " << J[1][1] << "]\n";
     }
 };
+
+
 
 
 
@@ -237,7 +285,8 @@ public:
     int ID[4];
     vector<Jakobian> jakobiany;
     vector<vector<double>> H;
-
+    vector<vector<double>> Hbc;
+    vector<double> P;
 
 
     void obliczH(const ElemUniv& eUniv, const Grid& grid, double conductivity) {
@@ -269,7 +318,7 @@ public:
                     for (int j = 0; j < 4; j++)
                     {
 
-                       H[i][j] += conductivity * (J.dN_dx[i] * J.dN_dx[j] + J.dN_dy[i] * J.dN_dy[j]) * J.detJ * w_x * w_y;
+                        H[i][j] += conductivity * (J.dN_dx[i] * J.dN_dx[j] + J.dN_dy[i] * J.dN_dy[j]) * J.detJ * w_x * w_y;
 
                     }
                 }
@@ -279,6 +328,12 @@ public:
         
 
     }
+
+
+
+
+    void obliczHbc( const Surface& surface, const Grid& grid, double conductivity);
+    void obliczP(const Surface& surface, const Grid& grid, double Tot);
 };
 
 
@@ -293,6 +348,93 @@ public:
 };
 
 
+void Element::obliczHbc( const Surface& surface, const Grid& grid, double alfa) {
+
+    Hbc.assign(4, vector<double>(4, 0.0));
+
+    const int edge[4][2] = { {0,1}, {1,2}, {2,3}, {3,0} };
+
+    int npc = surface.npc;
+
+    GaussQuadrature G(npc);
+
+
+    for (int e = 0; e < 4; e++)
+    {
+        int n1 = ID[edge[e][0]] - 1;
+        int n2 = ID[edge[e][1]] - 1;
+
+
+        if (grid.nodes[n1].BC == 0 || grid.nodes[n2].BC == 0)
+        {
+            continue;
+        }
+
+        double x1 = grid.nodes[n1].x, y1 = grid.nodes[n1].y;
+        double x2 = grid.nodes[n2].x, y2 = grid.nodes[n2].y;
+
+        double dl = sqrt((x2 - x1) * (x2 - x1) + (y2 - y1) * (y2 - y1));
+        double detJ = dl / 2.0;
+
+
+        for (int p = 0; p < npc; p++)
+        {
+            const vector<double>& Nf = surface.N[e][p];
+
+            double w = surface.gauss.w[p];
+
+            for (int i = 0; i < 4; i++)
+                for (int j = 0; j < 4; j++)
+                    Hbc[i][j] += alfa * Nf[i] * Nf[j] * detJ * w;
+        }
+
+
+    }
+}
+
+void Element::obliczP(const Surface& surface, const Grid& grid, double Tot) {
+
+    P.assign(4, 0.0);
+    const int edge[4][2] = { {0,1}, {1,2}, {2,3}, {3,0} };
+
+    int npc = surface.npc;
+
+    GaussQuadrature G(npc);
+
+
+    for (int e = 0; e < 4; e++)
+    {
+        int n1 = ID[edge[e][0]] - 1;
+        int n2 = ID[edge[e][1]] - 1;
+
+
+        if (grid.nodes[n1].BC == 0 || grid.nodes[n2].BC == 0)
+        {
+            continue;
+        }
+
+        double x1 = grid.nodes[n1].x, y1 = grid.nodes[n1].y;
+        double x2 = grid.nodes[n2].x, y2 = grid.nodes[n2].y;
+
+        double dl = sqrt((x2 - x1) * (x2 - x1) + (y2 - y1) * (y2 - y1));
+        double detJ = dl / 2.0;
+
+
+        for (int p = 0; p < npc; p++)
+        {
+            const vector<double>& Nf = surface.N[e][p];
+
+            double w = surface.gauss.w[p];
+
+            for (int i = 0; i < 4; i++)
+                
+                    P[i] += Tot * Nf[i]  * detJ * w;
+        }
+
+
+
+    }
+}
 
 class GlobalData {
 public:
@@ -316,7 +458,7 @@ public:
 
 Jakobian::Jakobian(const Element& elem, const Grid& grid, const ElemUniv& eUniv, int p) {
 
-    // Pobierz wspolrzedne wezlow danego elementu
+    
     double x[4], y[4];
     for (int i = 0; i < 4; i++) {
         int id = elem.ID[i] - 1;       // -1 bo w pliku wezly liczone od 1
@@ -468,7 +610,7 @@ bool loadFromFile(const string& filename, GlobalData& globalData, Grid& grid) {
                 int id = stoi(parts[0]);
                 double x = stod(parts[1]);
                 double y = stod(parts[2]);
-                grid.nodes.emplace_back(id, x, y);
+                grid.nodes.emplace_back(id, x, y, 0);
             }
             catch (const exception& e) {
                 cerr << "Warning: blad parsowania wezla: \"" << trimmedLine << "\" (" << e.what() << ")\n";
@@ -501,6 +643,11 @@ bool loadFromFile(const string& filename, GlobalData& globalData, Grid& grid) {
                 try {
                     int nodeID = stoi(p);
                     grid.boundaryNodes.push_back(nodeID);
+
+                    if (nodeID <= grid.nodes.size()) {
+
+                        grid.nodes[nodeID - 1].BC = 1;
+                    }
                 }
                 catch (...) {
                     cerr << "Warning: blad parsowania wezla BC: \"" << trimmedLine << "\"\n";
@@ -585,8 +732,9 @@ int main() {
 
     ElemUniv eUniv(globalData.npc); 
     int npc = eUniv.npc;
+    Surface surface(globalData.npc);
 
-    // Przygotuj globaln¹ macierz H (jeœli bêdziesz j¹ sk³adaæ)
+    // Przygotuj globaln¹ macierz H 
     vector<vector<double>> Hglobal(grid.nN, vector<double>(grid.nN, 0.0));
 
     // Dla ka¿dego elementu: policz Jakobiany i H
@@ -600,17 +748,19 @@ int main() {
                 cerr << "Warning: detJ bliski 0 w elemencie " << elem.id << " przy pc=" << p << "\n";
             }
             elem.jakobiany.push_back(J);
-             J.coutJakobian(); 
+            // J.coutJakobian(); 
         }
 
        
         cout << fixed << setprecision(6);
-        cout << "\nElement " << elem.id << "\n";
+        cout << "\n -------------------------------------------------------------------------------------------------------------------\n";
+        cout << "\n\n\nElement " << elem.id << "\n";
         cout << "Node coords (N1..N4):\n";
         for (int a = 0; a < 4; ++a) {
             int nid = elem.ID[a] - 1;
             cout << " N" << (a + 1) << " id=" << elem.ID[a]
-                << " (" << grid.nodes[nid].x << ", " << grid.nodes[nid].y << ")\n";
+                << " (" << grid.nodes[nid].x << ", " << grid.nodes[nid].y << ")";
+            cout << "   BC: " << grid.nodes[nid].BC << endl;
         }
 
         for (int p = 0; p < npc * npc; ++p) {
@@ -621,6 +771,9 @@ int main() {
             double eta = eUniv.gauss.xi[j];
 
             cout << "\npc=" << (p + 1) << " ksi=" << ksi << " eta=" << eta << "\n";
+            cout << "Jakobian: \n";
+            std::cout << "[" << J.J[0][0] << ", " << J.J[0][1] << "]\n";
+            std::cout << "[" << J.J[1][0] << ", " << J.J[1][1] << "]\n";
             cout << " detJ = " << J.detJ << "\n";
             cout << " dN_dx: ";
             for (int a = 0; a < 4; ++a) cout << setw(12) << J.dN_dx[a];
@@ -642,8 +795,31 @@ int main() {
                 cout << setw(12) << elem.H[i][j];
             cout << endl;
         }
+        elem.obliczHbc(surface, grid, globalData.Alfa);
 
+        // Wypisz macierz Hbc elementu
+        cout << "\nMacierz Hbc elementu " << elem.id << ":\n";
+        cout << setw(12) << " " << "N1" << setw(12) << "N2" << setw(12) << "N3" << setw(12) << "N4" << endl;
+        cout << string(55, '-') << endl;
+        for (int i = 0; i < 4; ++i) {
+            cout << "N" << i + 1 << " ";
+            for (int j = 0; j < 4; ++j)
+                cout << setw(12) << elem.Hbc[i][j];
+            cout << endl;
+        }
+
+
+        elem.obliczP(surface, grid, globalData.Tot);
         
+        // Wypisz wektor P elementu
+        cout << "\nWektor P elementu " << elem.id << ":\n";
+        for (int i = 0; i < 4; ++i) {
+            cout << "N" << i + 1 << " : " << elem.P[i] << "\n";
+        }
+
+
+
+
         for (int a = 0; a < 4; ++a) {
             int gi = elem.ID[a] - 1;
             for (int b = 0; b < 4; ++b) {
