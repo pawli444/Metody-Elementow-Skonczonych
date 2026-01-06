@@ -287,14 +287,15 @@ public:
     vector<vector<double>> H;
     vector<vector<double>> Hbc;
     vector<double> P;
+    vector<vector<double>> C;
 
 
-    void obliczH(const ElemUniv& eUniv, const Grid& grid, double conductivity) {
+    void obliczH(const ElemUniv& eUniv, const Grid& grid, double conductivity, double density, double specificHeat) {
 
 
         
         H.assign(4, vector<double>(4, 0.0));
-
+        C.assign(4, vector<double>(4, 0.0));
 
             int npc = eUniv.npc;
 
@@ -311,7 +312,7 @@ public:
                 double w_x = eUniv.gauss.w[ksi];
                 double w_y = eUniv.gauss.w[eta];
 
-
+                const vector<double>& Npc = eUniv.N[p];
 
                 for (int i = 0; i < 4; i++)
                 {
@@ -319,6 +320,7 @@ public:
                     {
 
                         H[i][j] += conductivity * (J.dN_dx[i] * J.dN_dx[j] + J.dN_dy[i] * J.dN_dy[j]) * J.detJ * w_x * w_y;
+                        C[i][j] += specificHeat * density * (Npc[i] * Npc[j]) * J.detJ * w_x * w_y;
 
                     }
                 }
@@ -333,7 +335,7 @@ public:
 
 
     void obliczHbc( const Surface& surface, const Grid& grid, double conductivity);
-    void obliczP(const Surface& surface, const Grid& grid, double Tot);
+    void obliczP(const Surface& surface, const Grid& grid, double alfa, double Tot);
 };
 
 
@@ -392,7 +394,7 @@ void Element::obliczHbc( const Surface& surface, const Grid& grid, double alfa) 
     }
 }
 
-void Element::obliczP(const Surface& surface, const Grid& grid, double Tot) {
+void Element::obliczP(const Surface& surface, const Grid& grid, double alfa, double Tot) {
 
     P.assign(4, 0.0);
     const int edge[4][2] = { {0,1}, {1,2}, {2,3}, {3,0} };
@@ -428,7 +430,7 @@ void Element::obliczP(const Surface& surface, const Grid& grid, double Tot) {
 
             for (int i = 0; i < 4; i++)
                 
-                    P[i] += Tot * Nf[i]  * detJ * w;
+                    P[i] += Tot * alfa * Nf[i] * detJ * w;
         }
 
 
@@ -688,6 +690,47 @@ void printDerivativeTable(const vector<vector<double>>& derivatives, const strin
 }
 
 
+// Funkcja pomocnicza: prosty rozk³ad Gaussa dla macierzy NxN
+vector<double> solveLinearSystem(vector<vector<double>> A, vector<double> b) {
+    int N = A.size();
+    vector<double> x(N, 0.0);
+
+    // Zamieniamy b na -b (bo [H]{t} + {P} = 0 -> [H]{t} = -{P})
+    for (int i = 0; i < N; ++i) b[i] = -b[i];
+
+    // Eliminacja Gaussa
+    for (int i = 0; i < N; ++i) {
+        // pivot
+        double maxEl = fabs(A[i][i]);
+        int maxRow = i;
+        for (int k = i + 1; k < N; ++k) {
+            if (fabs(A[k][i]) > maxEl) {
+                maxEl = fabs(A[k][i]);
+                maxRow = k;
+            }
+        }
+        swap(A[i], A[maxRow]);
+        swap(b[i], b[maxRow]);
+
+        // eliminacja
+        for (int k = i + 1; k < N; ++k) {
+            double c = A[k][i] / A[i][i];
+            for (int j = i; j < N; ++j)
+                A[k][j] -= c * A[i][j];
+            b[k] -= c * b[i];
+        }
+    }
+
+    // podstawienie wsteczne
+    for (int i = N - 1; i >= 0; --i) {
+        double sum = b[i];
+        for (int j = i + 1; j < N; ++j)
+            sum -= A[i][j] * x[j];
+        x[i] = sum / A[i][i];
+    }
+
+    return x;
+}
 
 
 
@@ -695,7 +738,7 @@ void printDerivativeTable(const vector<vector<double>>& derivatives, const strin
 int main() {
     GlobalData globalData;
     Grid grid;
-
+    
     vector<string> Pliki = { "Test1_4_4.txt", "Test2_4_4MixGrid.txt",
                              "Test3_31_31_kwadrat.txt", "Test4_testowe.txt" };
 
@@ -734,11 +777,20 @@ int main() {
     int npc = eUniv.npc;
     Surface surface(globalData.npc);
 
+
+
+
     // Przygotuj globaln¹ macierz H 
     vector<vector<double>> Hglobal(grid.nN, vector<double>(grid.nN, 0.0));
+    vector<vector<double>> Cglobal(grid.nN, vector<double>(grid.nN, 0.0));
 
-    // Dla ka¿dego elementu: policz Jakobiany i H
+    vector<double> Pglobal(grid.nN, 0.0);
+    vector<vector<double>> Hglobal_plus_Hbc(grid.nN, vector<double>(grid.nN, 0.0));
+
+
+    
     for (auto& elem : grid.elements) {
+
         elem.jakobiany.clear();
         
         for (int p = 0; p < npc * npc; ++p) {
@@ -763,6 +815,7 @@ int main() {
             cout << "   BC: " << grid.nodes[nid].BC << endl;
         }
 
+
         for (int p = 0; p < npc * npc; ++p) {
             const Jakobian& J = elem.jakobiany[p];
             int i = p % npc;
@@ -783,7 +836,8 @@ int main() {
         }
 
        
-        elem.obliczH(eUniv, grid, globalData.Conductivity);
+
+        elem.obliczH(eUniv, grid, globalData.Conductivity, globalData.Density, globalData.SpecificHeat);
 
         // Wypisz macierz H elementu
         cout << "\nMacierz H elementu " << elem.id << ":\n";
@@ -795,6 +849,10 @@ int main() {
                 cout << setw(12) << elem.H[i][j];
             cout << endl;
         }
+
+
+
+
         elem.obliczHbc(surface, grid, globalData.Alfa);
 
         // Wypisz macierz Hbc elementu
@@ -808,8 +866,9 @@ int main() {
             cout << endl;
         }
 
+        
 
-        elem.obliczP(surface, grid, globalData.Tot);
+        elem.obliczP(surface, grid, globalData.Alfa , globalData.Tot);
         
         // Wypisz wektor P elementu
         cout << "\nWektor P elementu " << elem.id << ":\n";
@@ -817,20 +876,71 @@ int main() {
             cout << "N" << i + 1 << " : " << elem.P[i] << "\n";
         }
 
-
-
-
         for (int a = 0; a < 4; ++a) {
             int gi = elem.ID[a] - 1;
+            Pglobal[gi] += elem.P[a];
+
             for (int b = 0; b < 4; ++b) {
                 int gj = elem.ID[b] - 1;
-                Hglobal[gi][gj] += elem.H[a][b];
+                Hglobal[gi][gj] += elem.H[a][b];                   
+                Cglobal[gi][gj] += elem.C[a][b];
+                Hglobal_plus_Hbc[gi][gj] += elem.H[a][b] + elem.Hbc[a][b]; 
             }
         }
+
     } 
 
-    
+    cout << "\nGlobalny wektor P:\n";
+    for (int i = 0; i < grid.nN; ++i)
+        cout << "Node " << (i + 1) << " : " << Pglobal[i] << "\n";
+
     printMatrix(Hglobal, "Globalna macierz H:");
+
+    printMatrix(Cglobal, "Globalna macierz C");
+
+    printMatrix(Hglobal_plus_Hbc, "Globalna macierz H + Hbc");
+
+
+
+    double dt = globalData.SimulationStepTime;
+    double totalTime = globalData.SimulationTime;
+    int steps = static_cast<int>(totalTime / dt);
+
+   
+    vector<double> T(grid.nN, globalData.InitialTemp);
+    vector<double> Tnew(grid.nN, 0.0);
+
+    cout << "\n===== ANALIZA NIEUSTALONA =====\n";
+
+    double time = 0.0;
+
+    for (int step = 1; step <= steps; step++) {
+        time += dt;
+
+        
+        vector<vector<double>> H_eff = Hglobal_plus_Hbc;
+        vector<double> P_eff = Pglobal;
+
+        for (int i = 0; i < grid.nN; i++) {
+            for (int j = 0; j < grid.nN; j++) {
+                H_eff[i][j] += Cglobal[i][j] / dt;
+                P_eff[i] += (Cglobal[i][j] / dt) * T[j];
+            }
+        }
+
+       
+        Tnew = solveLinearSystem(H_eff, P_eff);
+
+        
+        T = Tnew;
+
+       
+        cout << "\nCzas t = " << time << " s\n";
+        for (int i = 0; i < grid.nN; i++) {
+            cout << "Node " << (i + 1) << " : " << T[i] << "\n";
+        }
+    }
+
 
     return 0;
 }
