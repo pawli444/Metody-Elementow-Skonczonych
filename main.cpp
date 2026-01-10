@@ -155,19 +155,19 @@ public:
                 double ksi = gauss.xi[i];
                 double eta = gauss.xi[j];
 
-                // --- funkcje ksztaltu ---
+                //  funkcje ksztaltu 
                 N[licznik][0] = 0.25 * (1 - ksi) * (1 - eta);
                 N[licznik][1] = 0.25 * (1 + ksi) * (1 - eta);
                 N[licznik][2] = 0.25 * (1 + ksi) * (1 + eta);
                 N[licznik][3] = 0.25 * (1 - ksi) * (1 + eta);
 
-                // --- pochodne wzglêdem E ---
+                //  pochodne wzglêdem E 
                 dN_dE[licznik][0] = -0.25 * (1 - eta);
                 dN_dE[licznik][1] = 0.25 * (1 - eta);
                 dN_dE[licznik][2] = 0.25 * (1 + eta);
                 dN_dE[licznik][3] = -0.25 * (1 + eta);
 
-                // --- pochodne wzglêdem N ---
+                //  pochodne wzglêdem N 
                 dN_dN[licznik][0] = -0.25 * (1 - ksi);
                 dN_dN[licznik][1] = -0.25 * (1 + ksi);
                 dN_dN[licznik][2] = 0.25 * (1 + ksi);
@@ -306,13 +306,13 @@ public:
 
 
 
-                int ksi = p % npc;     // kolumna 
-                int eta = p / npc;     // wiersz 
+                int col = p % npc;   
+                int row = p / npc;     
                 
-                double w_x = eUniv.gauss.w[ksi];
-                double w_y = eUniv.gauss.w[eta];
+                double w_x = eUniv.gauss.w[col];
+                double w_y = eUniv.gauss.w[row];
 
-                const vector<double>& Npc = eUniv.N[p];
+                const vector<double>& fKszt = eUniv.N[p];
 
                 for (int i = 0; i < 4; i++)
                 {
@@ -320,7 +320,7 @@ public:
                     {
 
                         H[i][j] += conductivity * (J.dN_dx[i] * J.dN_dx[j] + J.dN_dy[i] * J.dN_dy[j]) * J.detJ * w_x * w_y;
-                        C[i][j] += specificHeat * density * (Npc[i] * Npc[j]) * J.detJ * w_x * w_y;
+                        C[i][j] += specificHeat * density * (fKszt[i] * fKszt[j]) * J.detJ * w_x * w_y;
 
                     }
                 }
@@ -381,13 +381,13 @@ void Element::obliczHbc( const Surface& surface, const Grid& grid, double alfa) 
 
         for (int p = 0; p < npc; p++)
         {
-            const vector<double>& Nf = surface.N[e][p];
+            const vector<double>& fKsz = surface.N[e][p];
 
             double w = surface.gauss.w[p];
 
             for (int i = 0; i < 4; i++)
                 for (int j = 0; j < 4; j++)
-                    Hbc[i][j] += alfa * Nf[i] * Nf[j] * detJ * w;
+                    Hbc[i][j] += alfa * fKsz[i] * fKsz[j] * detJ * w;
         }
 
 
@@ -424,13 +424,13 @@ void Element::obliczP(const Surface& surface, const Grid& grid, double alfa, dou
 
         for (int p = 0; p < npc; p++)
         {
-            const vector<double>& Nf = surface.N[e][p];
+            const vector<double>& fKsz = surface.N[e][p];
 
             double w = surface.gauss.w[p];
 
             for (int i = 0; i < 4; i++)
                 
-                    P[i] += Tot * alfa * Nf[i] * detJ * w;
+                    P[i] += Tot * alfa * fKsz[i] * detJ * w;
         }
 
 
@@ -451,7 +451,7 @@ public:
     int nN = 0;
     int nE = 0;
 
-    //ile punktów calkowania
+    //ustaw npc
     int npc = 2;
 };
 
@@ -690,15 +690,14 @@ void printDerivativeTable(const vector<vector<double>>& derivatives, const strin
 }
 
 
-// Funkcja pomocnicza: prosty rozk³ad Gaussa dla macierzy NxN
+
 vector<double> solveLinearSystem(vector<vector<double>> A, vector<double> b) {
     int N = A.size();
     vector<double> x(N, 0.0);
 
-    // Zamieniamy b na -b (bo [H]{t} + {P} = 0 -> [H]{t} = -{P})
-    for (int i = 0; i < N; ++i) b[i] = -b[i];
 
-    // Eliminacja Gaussa
+
+   
     for (int i = 0; i < N; ++i) {
         // pivot
         double maxEl = fabs(A[i][i]);
@@ -712,7 +711,7 @@ vector<double> solveLinearSystem(vector<vector<double>> A, vector<double> b) {
         swap(A[i], A[maxRow]);
         swap(b[i], b[maxRow]);
 
-        // eliminacja
+      
         for (int k = i + 1; k < N; ++k) {
             double c = A[k][i] / A[i][i];
             for (int j = i; j < N; ++j)
@@ -721,7 +720,7 @@ vector<double> solveLinearSystem(vector<vector<double>> A, vector<double> b) {
         }
     }
 
-    // podstawienie wsteczne
+    // podstawienie
     for (int i = N - 1; i >= 0; --i) {
         double sum = b[i];
         for (int j = i + 1; j < N; ++j)
@@ -742,7 +741,9 @@ int main() {
     vector<string> Pliki = { "Test1_4_4.txt", "Test2_4_4MixGrid.txt",
                              "Test3_31_31_kwadrat.txt", "Test4_testowe.txt" };
 
-    if (!loadFromFile(Pliki[1], globalData, grid)) return 1;
+
+    //zmien
+    if (!loadFromFile(Pliki[2], globalData, grid)) return 1;
 
     // Wypisz dane globalne
     cout << "Dane globalne:\n";
@@ -780,11 +781,11 @@ int main() {
 
 
 
-    // Przygotuj globaln¹ macierz H 
     vector<vector<double>> Hglobal(grid.nN, vector<double>(grid.nN, 0.0));
     vector<vector<double>> Cglobal(grid.nN, vector<double>(grid.nN, 0.0));
 
     vector<double> Pglobal(grid.nN, 0.0);
+    vector<vector<double>> Hbcglobal(grid.nN, vector<double>(grid.nN, 0.0));
     vector<vector<double>> Hglobal_plus_Hbc(grid.nN, vector<double>(grid.nN, 0.0));
 
 
@@ -804,51 +805,51 @@ int main() {
         }
 
        
-        cout << fixed << setprecision(6);
-        cout << "\n -------------------------------------------------------------------------------------------------------------------\n";
-        cout << "\n\n\nElement " << elem.id << "\n";
-        cout << "Node coords (N1..N4):\n";
-        for (int a = 0; a < 4; ++a) {
-            int nid = elem.ID[a] - 1;
-            cout << " N" << (a + 1) << " id=" << elem.ID[a]
-                << " (" << grid.nodes[nid].x << ", " << grid.nodes[nid].y << ")";
-            cout << "   BC: " << grid.nodes[nid].BC << endl;
-        }
+        //cout << fixed << setprecision(6);
+        //cout << "\n -------------------------------------------------------------------------------------------------------------------\n";
+        //cout << "\n\n\nElement " << elem.id << "\n";
+        //cout << "Node coords (N1..N4):\n";
+        //for (int a = 0; a < 4; ++a) {
+        //    int nid = elem.ID[a] - 1;
+        //    cout << " N" << (a + 1) << " id=" << elem.ID[a]
+        //        << " (" << grid.nodes[nid].x << ", " << grid.nodes[nid].y << ")";
+        //    cout << "   BC: " << grid.nodes[nid].BC << endl;
+        //}
 
 
-        for (int p = 0; p < npc * npc; ++p) {
-            const Jakobian& J = elem.jakobiany[p];
-            int i = p % npc;
-            int j = p / npc;
-            double ksi = eUniv.gauss.xi[i];
-            double eta = eUniv.gauss.xi[j];
+        //for (int p = 0; p < npc * npc; ++p) {
+        //    const Jakobian& J = elem.jakobiany[p];
+        //    int i = p % npc;
+        //    int j = p / npc;
+        //    double ksi = eUniv.gauss.xi[i];
+        //    double eta = eUniv.gauss.xi[j];
 
-            cout << "\npc=" << (p + 1) << " ksi=" << ksi << " eta=" << eta << "\n";
-            cout << "Jakobian: \n";
-            std::cout << "[" << J.J[0][0] << ", " << J.J[0][1] << "]\n";
-            std::cout << "[" << J.J[1][0] << ", " << J.J[1][1] << "]\n";
-            cout << " detJ = " << J.detJ << "\n";
-            cout << " dN_dx: ";
-            for (int a = 0; a < 4; ++a) cout << setw(12) << J.dN_dx[a];
-            cout << "\n dN_dy: ";
-            for (int a = 0; a < 4; ++a) cout << setw(12) << J.dN_dy[a];
-            cout << "\n";
-        }
+        //    cout << "\npc=" << (p + 1) << " ksi=" << ksi << " eta=" << eta << "\n";
+        //    cout << "Jakobian: \n";
+        //    std::cout << "[" << J.J[0][0] << ", " << J.J[0][1] << "]\n";
+        //    std::cout << "[" << J.J[1][0] << ", " << J.J[1][1] << "]\n";
+        //    cout << " detJ = " << J.detJ << "\n";
+        //    cout << " dN_dx: ";
+        //    for (int a = 0; a < 4; ++a) cout << setw(12) << J.dN_dx[a];
+        //    cout << "\n dN_dy: ";
+        //    for (int a = 0; a < 4; ++a) cout << setw(12) << J.dN_dy[a];
+        //    cout << "\n";
+        //}
 
        
 
         elem.obliczH(eUniv, grid, globalData.Conductivity, globalData.Density, globalData.SpecificHeat);
 
-        // Wypisz macierz H elementu
-        cout << "\nMacierz H elementu " << elem.id << ":\n";
-        cout << setw(12) << " " << "N1" << setw(12) << "N2" << setw(12) << "N3" << setw(12) << "N4" << endl;
-        cout << string(55, '-') << endl;
-        for (int i = 0; i < 4; ++i) {
-            cout << "N" << i + 1 << " ";
-            for (int j = 0; j < 4; ++j)
-                cout << setw(12) << elem.H[i][j];
-            cout << endl;
-        }
+        //// Wypisz macierz H elementu
+        //cout << "\nMacierz H elementu " << elem.id << ":\n";
+        //cout << setw(12) << " " << "N1" << setw(12) << "N2" << setw(12) << "N3" << setw(12) << "N4" << endl;
+        //cout << string(55, '-') << endl;
+        //for (int i = 0; i < 4; ++i) {
+        //    cout << "N" << i + 1 << " ";
+        //    for (int j = 0; j < 4; ++j)
+        //        cout << setw(12) << elem.H[i][j];
+        //    cout << endl;
+        //}
 
 
 
@@ -856,25 +857,25 @@ int main() {
         elem.obliczHbc(surface, grid, globalData.Alfa);
 
         // Wypisz macierz Hbc elementu
-        cout << "\nMacierz Hbc elementu " << elem.id << ":\n";
-        cout << setw(12) << " " << "N1" << setw(12) << "N2" << setw(12) << "N3" << setw(12) << "N4" << endl;
-        cout << string(55, '-') << endl;
-        for (int i = 0; i < 4; ++i) {
-            cout << "N" << i + 1 << " ";
-            for (int j = 0; j < 4; ++j)
-                cout << setw(12) << elem.Hbc[i][j];
-            cout << endl;
-        }
+        //cout << "\nMacierz Hbc elementu " << elem.id << ":\n";
+        //cout << setw(12) << " " << "N1" << setw(12) << "N2" << setw(12) << "N3" << setw(12) << "N4" << endl;
+        //cout << string(55, '-') << endl;
+        //for (int i = 0; i < 4; ++i) {
+        //    cout << "N" << i + 1 << " ";
+        //    for (int j = 0; j < 4; ++j)
+        //        cout << setw(12) << elem.Hbc[i][j];
+        //    cout << endl;
+        //}
 
         
 
         elem.obliczP(surface, grid, globalData.Alfa , globalData.Tot);
         
         // Wypisz wektor P elementu
-        cout << "\nWektor P elementu " << elem.id << ":\n";
-        for (int i = 0; i < 4; ++i) {
-            cout << "N" << i + 1 << " : " << elem.P[i] << "\n";
-        }
+       // cout << "\nWektor P elementu " << elem.id << ":\n";
+       // for (int i = 0; i < 4; ++i) {
+           // cout << "N" << i + 1 << " : " << elem.P[i] << "\n";
+       // }
 
         for (int a = 0; a < 4; ++a) {
             int gi = elem.ID[a] - 1;
@@ -883,6 +884,7 @@ int main() {
             for (int b = 0; b < 4; ++b) {
                 int gj = elem.ID[b] - 1;
                 Hglobal[gi][gj] += elem.H[a][b];                   
+                Hbcglobal[gi][gj] += elem.Hbc[a][b];
                 Cglobal[gi][gj] += elem.C[a][b];
                 Hglobal_plus_Hbc[gi][gj] += elem.H[a][b] + elem.Hbc[a][b]; 
             }
@@ -890,15 +892,16 @@ int main() {
 
     } 
 
-    cout << "\nGlobalny wektor P:\n";
-    for (int i = 0; i < grid.nN; ++i)
-        cout << "Node " << (i + 1) << " : " << Pglobal[i] << "\n";
+   // cout << "\nGlobalny wektor P:\n";
+   // for (int i = 0; i < grid.nN; ++i)
+      
+     //   cout << "Node " << (i + 1) << " : " << Pglobal[i] << "\n";
 
-    printMatrix(Hglobal, "Globalna macierz H:");
+  //  printMatrix(Hglobal, "Globalna macierz H:");
 
-    printMatrix(Cglobal, "Globalna macierz C");
+  //  printMatrix(Cglobal, "Globalna macierz C");
 
-    printMatrix(Hglobal_plus_Hbc, "Globalna macierz H + Hbc");
+   // printMatrix(Hglobal_plus_Hbc, "Globalna macierz H + Hbc");
 
 
 
@@ -910,7 +913,7 @@ int main() {
     vector<double> T(grid.nN, globalData.InitialTemp);
     vector<double> Tnew(grid.nN, 0.0);
 
-    cout << "\n===== ANALIZA NIEUSTALONA =====\n";
+    cout << "\nTemperatura w czasie\n";
 
     double time = 0.0;
 
@@ -936,9 +939,29 @@ int main() {
 
        
         cout << "\nCzas t = " << time << " s\n";
-        for (int i = 0; i < grid.nN; i++) {
-            cout << "Node " << (i + 1) << " : " << T[i] << "\n";
+        //for (int i = 0; i < grid.nN; i++) {
+        //    cout << "Node " << (i + 1) << " : " << T[i] << "\n";
+        //}
+
+         //50
+        if (fabs(fmod(time, 5.0)) < 1e-9) {
+
+            double Tmin = T[0];
+            double Tmax = T[0];
+
+            for (int i = 1; i < grid.nN; i++) {
+                Tmin = min(Tmin, T[i]);
+                Tmax = max(Tmax, T[i]);
+            }
+
+            cout << fixed << setprecision(3);
+            cout << "\n Time[s] = " << time
+                << " | Tmin = " << Tmin
+                << " | Tmax = " << Tmax << endl;
         }
+
+
+
     }
 
 
