@@ -93,14 +93,14 @@ double gauss2D(double (*f)(double, double), const GaussQuadrature& G) {
     return sum;
 }
 
-// trim - usuwa bia³e znaki z pocz¹tku i koñca
+
 string trim(const string& str) {
     auto start = str.find_first_not_of(" \t\r\n");
     auto end = str.find_last_not_of(" \t\r\n");
     return (start == string::npos) ? "" : str.substr(start, end - start + 1);
 }
 
-// Rozbijanie po delimitrze + trim + pomijanie pustych tokenów
+
 vector<string> splitAndTrim(const string& s, char delim) {
     vector<string> parts;
     string token;
@@ -451,8 +451,8 @@ public:
     int nN = 0;
     int nE = 0;
 
-    //ustaw npc
-    int npc = 2;
+    //ustaw
+    int npc = 4;
 };
 
 
@@ -484,7 +484,7 @@ Jakobian::Jakobian(const Element& elem, const Grid& grid, const ElemUniv& eUniv,
     Jodwr[1][0] = -J[1][0] / detJ;
     Jodwr[1][1] = J[0][0] / detJ;
 
-    //Pochodne funkcji ksztaltu w uk³adzie globalnym
+    //fksz globalna
     for (int i = 0; i < 4; i++) {
         dN_dx[i] = Jodwr[0][0] * eUniv.dN_dE[p][i] + Jodwr[0][1] * eUniv.dN_dN[p][i];
         dN_dy[i] = Jodwr[1][0] * eUniv.dN_dE[p][i] + Jodwr[1][1] * eUniv.dN_dN[p][i];
@@ -506,7 +506,7 @@ void printMatrix(const vector<vector<double>>& M, const string& title) {
 
 
 
-// pomocnik do znalezienia i sparsowania liczby po kluczu (bez crashu)
+// pomocnik do znalezienia i sparsowania liczby po kluczu
 bool parseNumberAfterKey(const string& line, double& out) {
     // znajdŸ pierwsz¹ cyfrê, znak minus, lub kropkê
     size_t pos = line.find_first_of("0123456789-+.");
@@ -662,7 +662,7 @@ bool loadFromFile(const string& filename, GlobalData& globalData, Grid& grid) {
     // ustawienie liczników
     grid.nN = static_cast<int>(grid.nodes.size());
     grid.nE = static_cast<int>(grid.elements.size());
-    // jeœli globalData nie zawiera³o liczb nN/nE, mo¿na je uzupe³niæ
+    
     if (globalData.nN == 0) globalData.nN = grid.nN;
     if (globalData.nE == 0) globalData.nE = grid.nE;
 
@@ -743,9 +743,9 @@ int main() {
 
 
     //zmien
-    if (!loadFromFile(Pliki[2], globalData, grid)) return 1;
+    if (!loadFromFile(Pliki[0], globalData, grid)) return 1;
 
-    // Wypisz dane globalne
+   
     cout << "Dane globalne:\n";
     cout << "SimulationTime: " << globalData.SimulationTime << "\n";
     cout << "SimulationStepTime: " << globalData.SimulationStepTime << "\n";
@@ -757,7 +757,7 @@ int main() {
     cout << "SpecificHeat: " << globalData.SpecificHeat << "\n";
     cout << "Nodes (global): " << globalData.nN << "\tElements (global): " << globalData.nE << "\n\n";
 
-    // Wypisz wêz³y i elementy
+    //  wezly i elementy
     cout << "Wspolrzedne wezlow:\n";
     for (const auto& n : grid.nodes)
         cout << "ID: " << n.id << "\tX: " << n.x << "\tY: " << n.y << "\n";
@@ -901,6 +901,8 @@ int main() {
 
   //  printMatrix(Cglobal, "Globalna macierz C");
 
+  //  printMatrix(Hbcglobal, "HBCGLOBAL");
+
    // printMatrix(Hglobal_plus_Hbc, "Globalna macierz H + Hbc");
 
 
@@ -938,13 +940,13 @@ int main() {
         T = Tnew;
 
        
-        cout << "\nCzas t = " << time << " s\n";
+        //cout << "\nCzas t = " << time << " s\n";
         //for (int i = 0; i < grid.nN; i++) {
         //    cout << "Node " << (i + 1) << " : " << T[i] << "\n";
         //}
 
          //50
-        if (fabs(fmod(time, 5.0)) < 1e-9) {
+        if (fabs(fmod(time, step)) < 1e-9) {
 
             double Tmin = T[0];
             double Tmax = T[0];
