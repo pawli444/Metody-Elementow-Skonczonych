@@ -440,6 +440,7 @@ void Element::obliczP(const Surface& surface, const Grid& grid, double alfaOut, 
             continue;
         }
 
+
         double alfaEdge;
         double totEdge;
 
@@ -485,7 +486,6 @@ class GlobalData {
 public:
     double SimulationTime = 0;
     double SimulationStepTime = 0;
-    double Alfa = 0;
     double AlfaOut = 0;
     double AlfaIn = 0;
     double TotOut = 0;
@@ -572,6 +572,20 @@ bool parseNumberAfterKey(const string& line, double& out) {
         return false;
     }
 }
+
+
+bool isCCW(const Element& e, const Grid& g) {
+    auto& n1 = g.nodes[e.ID[0] - 1];
+    auto& n2 = g.nodes[e.ID[1] - 1];
+    auto& n3 = g.nodes[e.ID[2] - 1];
+
+    double cross =
+        (n2.x - n1.x) * (n3.y - n1.y) -
+        (n2.y - n1.y) * (n3.x - n1.x);
+
+    return cross > 0;
+}
+
 bool loadFromFile(const string& filename, GlobalData& globalData, Grid& grid) {
     ifstream file(filename);
     if (!file.is_open()) {
@@ -616,15 +630,6 @@ bool loadFromFile(const string& filename, GlobalData& globalData, Grid& grid) {
         }
         if (trimmedLine.find("Alfa_in") != string::npos || trimmedLine.find("AlfaIn") != string::npos) {
             double v; if (parseNumberAfterKey(trimmedLine, v)) globalData.AlfaIn = v;
-            readingNodes = readingElements = readingBC = readingBCOut = readingBCIn = readingMaterials = readingElementMat = false;
-            continue;
-        }
-        if (trimmedLine.find("Alfa") != string::npos && trimmedLine.find("Alfa_") == string::npos && trimmedLine.find("AlfaOut") == string::npos && trimmedLine.find("AlfaIn") == string::npos) {
-            double v; if (parseNumberAfterKey(trimmedLine, v)) {
-                globalData.Alfa = v;
-                if (globalData.AlfaOut == 0) globalData.AlfaOut = v;
-                if (globalData.AlfaIn == 0) globalData.AlfaIn = v;
-            }
             readingNodes = readingElements = readingBC = readingBCOut = readingBCIn = readingMaterials = readingElementMat = false;
             continue;
         }
@@ -720,6 +725,13 @@ bool loadFromFile(const string& filename, GlobalData& globalData, Grid& grid) {
                 e.id = stoi(parts[0]);
                 for (int i = 0; i < 4; ++i) e.ID[i] = stoi(parts[i + 1]);
                 e.materialId = 0;
+
+                //to
+
+                if (!isCCW(e, grid)) {
+                    swap(e.ID[1], e.ID[3]);   
+                }
+
                 grid.elements.push_back(e);
             }
             catch (const exception& ex) {
@@ -966,17 +978,7 @@ auto printWrapped = [&](const vector<int>& vec, const string& header, int per_li
     }
     };
 
-bool isCCW(const Element& e, const Grid& g) {
-    auto& n1 = g.nodes[e.ID[0] - 1];
-    auto& n2 = g.nodes[e.ID[1] - 1];
-    auto& n3 = g.nodes[e.ID[2] - 1];
-    
-    double cross =
-        (n2.x - n1.x) * (n3.y - n1.y) -
-        (n2.y - n1.y) * (n3.x - n1.x);
 
-    return cross > 0;
-}
 
 
 
@@ -993,12 +995,30 @@ int main() {
     //zmien
     if (!loadFromFile(Pliki[5], globalData, grid)) return 1;
 
-    globalData.materials.push_back(Material(1, "tynk", 0.7, 1800.0, 840.0));
-    globalData.materialIdToIndex[1] = 0;
-    globalData.materials.push_back(Material(2, "styropian", 0.032, 35.0, 1400.0));
-    globalData.materialIdToIndex[2] = 1;
-    globalData.materials.push_back(Material(3, "cegla", 0.6, 1800.0, 840.0));
-    globalData.materialIdToIndex[3] = 2;
+    //globalData.materials.push_back(Material(1, "tynk", 0.7, 1800.0, 840.0));
+    //globalData.materialIdToIndex[1] = 0;
+    //globalData.materials.push_back(Material(2, "styropian", 0.032, 250.0, 1400.0));
+    //globalData.materialIdToIndex[2] = 1;
+    //globalData.materials.push_back(Material(3, "cegla", 0.6, 1800.0, 840.0));
+    //globalData.materialIdToIndex[3] = 2;
+
+
+    cout << endl << endl << endl << endl << endl << "wielkosc noway"<< globalData.materials.size() <<endl << endl << endl << endl << endl << endl;
+
+
+    for (int i = 0; i < globalData.materials.size(); i++)
+    {
+        cout << endl << globalData.materials[i].name << endl;
+        cout << globalData.materials[i].conductivity << endl;
+        cout << globalData.materials[i].density << endl;
+        cout << globalData.materials[i].specificHeat << endl << endl << endl;
+    }
+
+    for (auto& e : grid.elements) {
+        if (e.materialId == 0) {
+            cout << "\n\n\n\nelement nie ma materialu\n\n";
+        }
+    }
 
 
     vector<int> bc_out_nodes;
@@ -1013,13 +1033,9 @@ int main() {
     cout << "Dane globalne:\n";
     cout << "SimulationTime: " << globalData.SimulationTime << "\n";
     cout << "SimulationStepTime: " << globalData.SimulationStepTime << "\n";
-    //cout << "Conductivity: " << globalData.Conductivity << "\n";
-    cout << "Alfa: " << globalData.Alfa << "\n";
     cout << "Tot In: " << globalData.TotIn << "\n";
     cout << "Tot out: " << globalData.TotOut << "\n";
     cout << "InitialTemp: " << globalData.InitialTemp << "\n";
-    //cout << "Density: " << globalData.Density << "\n";
-    //cout << "SpecificHeat: " << globalData.SpecificHeat << "\n";
     cout << "Nodes (global): " << globalData.nN << "\tElements (global): " << globalData.nE << "\n\n";
 
     //  wezly i elementy
@@ -1153,6 +1169,10 @@ int main() {
            // cout << "N" << i + 1 << " : " << elem.P[i] << "\n";
        // }
 
+        if (elem.materialId == 2) {
+            printMatrix(elem.H, "Lokalna macierz H styro");
+        }
+
         for (int a = 0; a < 4; ++a) {
             int gi = elem.ID[a] - 1;
             Pglobal[gi] += elem.P[a];
@@ -1181,6 +1201,69 @@ int main() {
 
    // printMatrix(Hglobal_plus_Hbc, "Globalna macierz H + Hbc");
 
+
+  
+    vector<vector<int>> materialNodes(globalData.materials.size());
+    for (const auto& el : grid.elements) {
+        auto it = globalData.materialIdToIndex.find(el.materialId);
+        if (it == globalData.materialIdToIndex.end()) continue;
+        size_t midx = it->second;
+        auto& vec = materialNodes[midx];
+        for (int k = 0; k < 4; ++k) {
+            int nid = el.ID[k] - 1;
+            if (nid < 0 || nid >= grid.nN) continue;
+            // avoid duplicates (simple)
+            if (find(vec.begin(), vec.end(), nid) == vec.end())
+                vec.push_back(nid);
+        }
+    }
+
+    // debug: ile wêz³ów na materia³ i przyk³ady wspó³rzêdnych
+    for (size_t m = 0; m < globalData.materials.size(); ++m) {
+        auto& mat = globalData.materials[m];
+        auto& nodes = materialNodes[m];
+        cout << "DBG: Material " << mat.name << " id=" << mat.id
+            << " nodes=" << nodes.size() << " (sample up to 5): ";
+        for (size_t i = 0; i < nodes.size() && i < 5; ++i) {
+            int nid = nodes[i];
+            cout << "(" << nid + 1 << ":" << grid.nodes[nid].x << "," << grid.nodes[nid].y << ") ";
+        }
+        cout << "\n";
+    }
+
+    for (size_t m = 0; m < globalData.materials.size(); ++m) {
+        int outCnt = 0, inCnt = 0;
+        for (int nid : materialNodes[m]) {
+            int bc = grid.nodes[nid].BC;
+            if (bc == 1) ++outCnt;
+            else if (bc == 2) ++inCnt;
+        }
+        cout << "DBG: mat id=" << globalData.materials[m].id << " outNodes=" << outCnt << " inNodes=" << inCnt << "\n";
+    }
+
+    for (size_t m = 0; m < globalData.materials.size(); ++m) {
+        double sumP = 0, sumCdiag = 0;
+        for (int nid : materialNodes[m]) {
+            sumP += Pglobal[nid];
+            sumCdiag += Cglobal[nid][nid];
+        }
+        cout << "DBG: mat id=" << globalData.materials[m].id << " sumP=" << sumP << " sumCdiag=" << sumCdiag << "\n";
+    }
+
+    // temporary test: force all materials same
+    for (auto& mat : globalData.materials) {
+        mat.conductivity = 0.6;
+        mat.density = 1800.0;
+        mat.specificHeat = 840.0;
+    }
+
+    for (int i = 0; i < 10 && i < grid.elements.size(); ++i) {
+        const Element& el = grid.elements[i];
+        double cx = 0, cy = 0;
+        for (int k = 0; k < 4; ++k) { cx += grid.nodes[el.ID[k] - 1].x; cy += grid.nodes[el.ID[k] - 1].y; }
+        cx /= 4; cy /= 4;
+        cout << "el " << el.id << " matId=" << el.materialId << " centroid=(" << cx << "," << cy << ")\n";
+    }
 
 
     double dt = globalData.SimulationStepTime;
@@ -1222,21 +1305,93 @@ int main() {
         //}
 
          //50
-        if (fabs(fmod(time, step)) < 1e-9) {
+        //if (fabs(fmod(time, step)) < 1e-9) {
 
-            double Tmin = T[0];
-            double Tmax = T[0];
+        //    double Tmin = T[0];
+        //    double Tmax = T[0];
 
-            for (int i = 1; i < grid.nN; i++) {
-                Tmin = min(Tmin, T[i]);
-                Tmax = max(Tmax, T[i]);
-            }
+        //    for (int i = 1; i < grid.nN; i++) {
+        //        Tmin = min(Tmin, T[i]);
+        //        Tmax = max(Tmax, T[i]);
+        //    }
 
-            cout << fixed << setprecision(3);
-            cout << "\n Time[s] = " << time
-                << " | Tmin = " << Tmin
-                << " | Tmax = " << Tmax << endl;
+        //    cout << fixed << setprecision(3);
+        //    cout << "\n Time[s] = " << time
+        //        << " | Tmin = " << Tmin
+        //        << " | Tmax = " << Tmax << endl;
+        //}
+
+        int printEvery = 1; // drukuj co krok; zmieñ na np. 10 ¿eby rzadziej
+
+if (step % printEvery == 0) {
+    cout << fixed << setprecision(3);
+    cout << "\n\n======================================================================================";
+    cout << "\n Time[s] = " << time << "\n";
+    cout << "======================================================================================\n\n\n";
+
+    for (size_t m = 0; m < globalData.materials.size(); ++m) {
+        const auto &mat = globalData.materials[m];
+        const auto &nodes = materialNodes[m];
+        if (nodes.empty()) {
+            cout << "Material \"" << mat.name << "\" id=" << mat.id << ": (no nodes)\n";
+            continue;
         }
+
+        double overallMin = numeric_limits<double>::infinity();
+        double overallMax = -numeric_limits<double>::infinity();
+        double outMin = numeric_limits<double>::infinity();
+        double outMax = -numeric_limits<double>::infinity();
+        double inMin = numeric_limits<double>::infinity();
+        double inMax = -numeric_limits<double>::infinity();
+
+        for (int nid : nodes) {
+            double val = T[nid];
+            if (!isfinite(val)) continue;
+            overallMin = min(overallMin, val);
+            overallMax = max(overallMax, val);
+            int bc = grid.nodes[nid].BC;
+            if (bc == 1) { outMin = min(outMin, val); outMax = max(outMax, val); }
+            else if (bc == 2) { inMin = min(inMin, val); inMax = max(inMax, val); }
+        }
+
+
+
+
+
+        cout << "----------------------------------------\n";
+        cout << " Material: " << mat.name << "   (id=" << mat.id << ")\n";
+        cout << "----------------------------------------\n";
+
+        cout << left << setw(20) << "Overall Tmin:"
+            << (isfinite(overallMin) ? overallMin : NAN) << "\n";
+
+        cout << left << setw(20) << "Overall Tmax:"
+            << (isfinite(overallMax) ? overallMax : NAN) << "\n";
+
+        if (mat.id == 1) {
+            cout << left << setw(20) << "Temp OUT Tmin:"
+                << (isfinite(outMin) ? outMin : NAN) << "\n";
+
+            cout << left << setw(20) << "Temp OUT Tmax:"
+                << (isfinite(outMax) ? outMax : NAN) << "\n";
+        }
+        else if (mat.id == 3) {
+            cout << left << setw(20) << "Temp IN Tmin:"
+                << (isfinite(inMin) ? inMin : NAN) << "\n";
+
+            cout << left << setw(20) << "Temp IN Tmax:"
+                << (isfinite(inMax) ? inMax : NAN) << "\n";
+        }
+
+        cout << "----------------------------------------\n\n";
+
+
+        
+             
+
+
+    }
+}
 
 
 

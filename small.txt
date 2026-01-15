@@ -2,8 +2,8 @@ SimulationTime 500
 SimulationStepTime 50
 AlfaIn 300
 AlfaOut 250
-InitialTemp 20
-TotOut 5
+InitialTemp 23
+TotOut 0
 TotIn 23
 Nodes number 110
 Elements number 90
