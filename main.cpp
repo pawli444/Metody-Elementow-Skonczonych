@@ -6,7 +6,8 @@
 #include <algorithm>
 #include <cctype>
 #include <iomanip>
-
+#include <map>
+#include <cmath>
 
 using namespace std;
 
@@ -275,7 +276,16 @@ public:
     }
 };
 
-
+struct Material {
+    int id;
+    std::string name;
+    double conductivity;
+    double density;
+    double specificHeat;
+    Material(int id_ = 0, const std::string& name_ = "", double k = 0.0, double rho = 0.0, double cp = 0.0)
+        : id(id_), name(name_), conductivity(k), density(rho), specificHeat(cp) {
+    }
+};
 
 
 
@@ -288,14 +298,19 @@ public:
     vector<vector<double>> Hbc;
     vector<double> P;
     vector<vector<double>> C;
+    int materialId = 0;
 
-
-    void obliczH(const ElemUniv& eUniv, const Grid& grid, double conductivity, double density, double specificHeat) {
+    void obliczH(const ElemUniv& eUniv, const Grid& grid, const Material& M) {
 
 
         
         H.assign(4, vector<double>(4, 0.0));
         C.assign(4, vector<double>(4, 0.0));
+
+
+        double conductivity = M.conductivity;
+        double density = M.density;
+        double specificHeat = M.specificHeat;
 
             int npc = eUniv.npc;
 
@@ -334,8 +349,8 @@ public:
 
 
 
-    void obliczHbc( const Surface& surface, const Grid& grid, double conductivity);
-    void obliczP(const Surface& surface, const Grid& grid, double alfa, double Tot);
+    void obliczHbc( const Surface& surface, const Grid& grid, double alfaOut, double alfaIn);
+    void obliczP(const Surface& surface, const Grid& grid, double alfaOut, double alfaIn, double TotOut, double TotIn);
 };
 
 
@@ -350,7 +365,7 @@ public:
 };
 
 
-void Element::obliczHbc( const Surface& surface, const Grid& grid, double alfa) {
+void Element::obliczHbc( const Surface& surface, const Grid& grid, double alfaOut, double alfaIn) {
 
     Hbc.assign(4, vector<double>(4, 0.0));
 
@@ -358,7 +373,6 @@ void Element::obliczHbc( const Surface& surface, const Grid& grid, double alfa) 
 
     int npc = surface.npc;
 
-    GaussQuadrature G(npc);
 
 
     for (int e = 0; e < 4; e++)
@@ -369,6 +383,18 @@ void Element::obliczHbc( const Surface& surface, const Grid& grid, double alfa) 
 
         if (grid.nodes[n1].BC == 0 || grid.nodes[n2].BC == 0)
         {
+            continue;
+        }
+
+        double alfaEdge;
+
+        if (grid.nodes[n1].BC == 1 && grid.nodes[n2].BC == 1) {
+            alfaEdge = alfaOut;
+        }
+        else if (grid.nodes[n1].BC == 2 && grid.nodes[n2].BC == 2) {
+            alfaEdge = alfaIn;
+        }
+        else {
             continue;
         }
 
@@ -387,21 +413,20 @@ void Element::obliczHbc( const Surface& surface, const Grid& grid, double alfa) 
 
             for (int i = 0; i < 4; i++)
                 for (int j = 0; j < 4; j++)
-                    Hbc[i][j] += alfa * fKsz[i] * fKsz[j] * detJ * w;
+                    Hbc[i][j] += alfaEdge * fKsz[i] * fKsz[j] * detJ * w;
         }
 
 
     }
 }
 
-void Element::obliczP(const Surface& surface, const Grid& grid, double alfa, double Tot) {
+void Element::obliczP(const Surface& surface, const Grid& grid, double alfaOut, double alfaIn, double TotOut, double TotIn) {
 
     P.assign(4, 0.0);
     const int edge[4][2] = { {0,1}, {1,2}, {2,3}, {3,0} };
 
     int npc = surface.npc;
 
-    GaussQuadrature G(npc);
 
 
     for (int e = 0; e < 4; e++)
@@ -412,6 +437,22 @@ void Element::obliczP(const Surface& surface, const Grid& grid, double alfa, dou
 
         if (grid.nodes[n1].BC == 0 || grid.nodes[n2].BC == 0)
         {
+            continue;
+        }
+
+        double alfaEdge;
+        double totEdge;
+
+        if (grid.nodes[n1].BC == 1 && grid.nodes[n2].BC == 1) {
+            alfaEdge = alfaOut;
+            totEdge = TotOut;
+
+        }
+        else if (grid.nodes[n1].BC == 2 && grid.nodes[n2].BC == 2) {
+            alfaEdge = alfaIn;
+            totEdge = TotIn;
+        }
+        else {
             continue;
         }
 
@@ -430,7 +471,7 @@ void Element::obliczP(const Surface& surface, const Grid& grid, double alfa, dou
 
             for (int i = 0; i < 4; i++)
                 
-                    P[i] += Tot * alfa * fKsz[i] * detJ * w;
+                    P[i] += totEdge * alfaEdge * fKsz[i] * detJ * w;
         }
 
 
@@ -438,18 +479,23 @@ void Element::obliczP(const Surface& surface, const Grid& grid, double alfa, dou
     }
 }
 
+
+
 class GlobalData {
 public:
     double SimulationTime = 0;
     double SimulationStepTime = 0;
-    double Conductivity = 0;
     double Alfa = 0;
-    double Tot = 0;
+    double AlfaOut = 0;
+    double AlfaIn = 0;
+    double TotOut = 0;
+    double TotIn = 0;
     double InitialTemp = 0;
-    double Density = 0;
-    double SpecificHeat = 0;
     int nN = 0;
     int nE = 0;
+
+    std::vector<Material> materials;
+    std::map<int, size_t> materialIdToIndex;
 
     //ustaw
     int npc = 4;
@@ -478,6 +524,11 @@ Jakobian::Jakobian(const Element& elem, const Grid& grid, const ElemUniv& eUniv,
     }
 
     detJ = (J[0][0] * J[1][1]) - (J[1][0] * J[0][1]);
+
+    if (detJ <= 0) {
+        cerr << "Zly Jacobian w elemencie " << elem.id << endl;
+        exit(1);
+    }
 
     Jodwr[0][0] = J[1][1] / detJ;
     Jodwr[0][1] = -J[0][1] / detJ;
@@ -521,7 +572,6 @@ bool parseNumberAfterKey(const string& line, double& out) {
         return false;
     }
 }
-
 bool loadFromFile(const string& filename, GlobalData& globalData, Grid& grid) {
     ifstream file(filename);
     if (!file.is_open()) {
@@ -533,79 +583,118 @@ bool loadFromFile(const string& filename, GlobalData& globalData, Grid& grid) {
     bool readingNodes = false;
     bool readingElements = false;
     bool readingBC = false;
+    bool readingBCOut = false;
+    bool readingBCIn = false;
+    bool readingMaterials = false;
+    bool readingElementMat = false;
 
+    vector<int> bcOutList;
+    vector<int> bcInList;
+    vector<int> bcCombinedList;
 
     while (getline(file, line)) {
         string trimmedLine = trim(line);
-        if (trimmedLine.empty()) continue;
+        if (trimmedLine.empty()) {
+            continue;
+        }
 
-        // GLOBAL DATA
         if (trimmedLine.find("SimulationTime") != string::npos) {
             double v; if (parseNumberAfterKey(trimmedLine, v)) globalData.SimulationTime = v;
+            readingNodes = readingElements = readingBC = readingBCOut = readingBCIn = readingMaterials = readingElementMat = false;
             continue;
         }
         if (trimmedLine.find("SimulationStepTime") != string::npos) {
             double v; if (parseNumberAfterKey(trimmedLine, v)) globalData.SimulationStepTime = v;
+            readingNodes = readingElements = readingBC = readingBCOut = readingBCIn = readingMaterials = readingElementMat = false;
             continue;
         }
-        if (trimmedLine.find("Conductivity") != string::npos) {
-            double v; if (parseNumberAfterKey(trimmedLine, v)) globalData.Conductivity = v;
+
+        if (trimmedLine.find("Alfa_out") != string::npos || trimmedLine.find("AlfaOut") != string::npos) {
+            double v; if (parseNumberAfterKey(trimmedLine, v)) globalData.AlfaOut = v;
+            readingNodes = readingElements = readingBC = readingBCOut = readingBCIn = readingMaterials = readingElementMat = false;
             continue;
         }
-        if (trimmedLine.find("Alfa") != string::npos) {
-            double v; if (parseNumberAfterKey(trimmedLine, v)) globalData.Alfa = v;
+        if (trimmedLine.find("Alfa_in") != string::npos || trimmedLine.find("AlfaIn") != string::npos) {
+            double v; if (parseNumberAfterKey(trimmedLine, v)) globalData.AlfaIn = v;
+            readingNodes = readingElements = readingBC = readingBCOut = readingBCIn = readingMaterials = readingElementMat = false;
             continue;
         }
-        if (trimmedLine.find("Tot") != string::npos) {
-            double v; if (parseNumberAfterKey(trimmedLine, v)) globalData.Tot = v;
+        if (trimmedLine.find("Alfa") != string::npos && trimmedLine.find("Alfa_") == string::npos && trimmedLine.find("AlfaOut") == string::npos && trimmedLine.find("AlfaIn") == string::npos) {
+            double v; if (parseNumberAfterKey(trimmedLine, v)) {
+                globalData.Alfa = v;
+                if (globalData.AlfaOut == 0) globalData.AlfaOut = v;
+                if (globalData.AlfaIn == 0) globalData.AlfaIn = v;
+            }
+            readingNodes = readingElements = readingBC = readingBCOut = readingBCIn = readingMaterials = readingElementMat = false;
+            continue;
+        }
+
+        if (trimmedLine.find("Tot_out") != string::npos || trimmedLine.find("TotOut") != string::npos) {
+            double v; if (parseNumberAfterKey(trimmedLine, v)) globalData.TotOut = v;
+            readingNodes = readingElements = readingBC = readingBCOut = readingBCIn = readingMaterials = readingElementMat = false;
+            continue;
+        }
+        if (trimmedLine.find("Tot_in") != string::npos || trimmedLine.find("TotIn") != string::npos) {
+            double v; if (parseNumberAfterKey(trimmedLine, v)) globalData.TotIn = v;
+            readingNodes = readingElements = readingBC = readingBCOut = readingBCIn = readingMaterials = readingElementMat = false;
             continue;
         }
         if (trimmedLine.find("InitialTemp") != string::npos) {
             double v; if (parseNumberAfterKey(trimmedLine, v)) globalData.InitialTemp = v;
-            continue;
-        }
-        if (trimmedLine.find("Density") != string::npos) {
-            double v; if (parseNumberAfterKey(trimmedLine, v)) globalData.Density = v;
-            continue;
-        }
-        if (trimmedLine.find("SpecificHeat") != string::npos) {
-            double v; if (parseNumberAfterKey(trimmedLine, v)) globalData.SpecificHeat = v;
+            readingNodes = readingElements = readingBC = readingBCOut = readingBCIn = readingMaterials = readingElementMat = false;
             continue;
         }
         if (trimmedLine.find("Nodes number") != string::npos) {
             double v; if (parseNumberAfterKey(trimmedLine, v)) globalData.nN = static_cast<int>(v);
+            readingNodes = readingElements = readingBC = readingBCOut = readingBCIn = readingMaterials = readingElementMat = false;
             continue;
         }
         if (trimmedLine.find("Elements number") != string::npos) {
             double v; if (parseNumberAfterKey(trimmedLine, v)) globalData.nE = static_cast<int>(v);
+            readingNodes = readingElements = readingBC = readingBCOut = readingBCIn = readingMaterials = readingElementMat = false;
             continue;
         }
 
-        // Sekcje
-        if (trimmedLine.find("*Node") != string::npos) {
+        if (trimmedLine.size() >= 5 && trimmedLine.substr(0, 5) == "*Node") {
             readingNodes = true;
-            readingElements = false;
+            readingElements = readingBC = readingBCOut = readingBCIn = readingMaterials = readingElementMat = false;
             continue;
         }
-        if (trimmedLine.find("*Element") != string::npos) {
+        if (trimmedLine.size() >= 8 && trimmedLine.substr(0, 8) == "*Element" && trimmedLine.find("Mat") == string::npos) {
             readingElements = true;
-            readingNodes = false;
+            readingNodes = readingBC = readingBCOut = readingBCIn = readingMaterials = readingElementMat = false;
             continue;
         }
-        if (trimmedLine.find("*BC") != string::npos) {
-
-            readingNodes = false;
-            readingElements = false;
+        if (trimmedLine.find("*BC_OUT") != string::npos) {
+            readingBCOut = true;
+            readingNodes = readingElements = readingBC = readingBCIn = readingMaterials = readingElementMat = false;
+            continue;
+        }
+        if (trimmedLine.find("*BC_IN") != string::npos) {
+            readingBCIn = true;
+            readingNodes = readingElements = readingBC = readingBCOut = readingMaterials = readingElementMat = false;
+            continue;
+        }
+        if (trimmedLine.size() >= 3 && trimmedLine.substr(0, 3) == "*BC" && trimmedLine.find("_OUT") == string::npos && trimmedLine.find("_IN") == string::npos) {
             readingBC = true;
+            readingNodes = readingElements = readingBCOut = readingBCIn = readingMaterials = readingElementMat = false;
+            continue;
+        }
+        if (trimmedLine.find("*Materials") != string::npos) {
+            readingMaterials = true;
+            readingNodes = readingElements = readingBC = readingBCOut = readingBCIn = readingElementMat = false;
+            continue;
+        }
+        if (trimmedLine.find("*ElementMat") != string::npos || trimmedLine.find("*ElementMaterial") != string::npos) {
+            readingElementMat = true;
+            readingMaterials = readingNodes = readingElements = readingBC = readingBCOut = readingBCIn = false;
             continue;
         }
 
-        // Wczytywanie wezlow (oczekujemy >=3 pól: id, x, y)
         if (readingNodes) {
             auto parts = splitAndTrim(trimmedLine, ',');
             if (parts.size() < 3) {
-                // linia nie zawiera poprawnych danych - pomijamy
-                cerr << "Warning: pomijam niepoprawna linie w sekcji *Node: \"" << trimmedLine << "\"\n";
+                cerr << "Warning: skipping malformed node line: \"" << trimmedLine << "\"\n";
                 continue;
             }
             try {
@@ -615,28 +704,65 @@ bool loadFromFile(const string& filename, GlobalData& globalData, Grid& grid) {
                 grid.nodes.emplace_back(id, x, y, 0);
             }
             catch (const exception& e) {
-                cerr << "Warning: blad parsowania wezla: \"" << trimmedLine << "\" (" << e.what() << ")\n";
-                continue;
+                cerr << "Warning: failed to parse node: \"" << trimmedLine << "\" (" << e.what() << ")\n";
             }
+            continue;
         }
 
-        // Wczytywanie elementów (oczekujemy >=5 pól: id, n1, n2, n3, n4)
         if (readingElements) {
             auto parts = splitAndTrim(trimmedLine, ',');
             if (parts.size() < 5) {
-                cerr << "Warning: pomijam niepoprawna linie w sekcji *Element: \"" << trimmedLine << "\"\n";
+                cerr << "Warning: skipping malformed element line: \"" << trimmedLine << "\"\n";
                 continue;
             }
             try {
                 Element e;
                 e.id = stoi(parts[0]);
                 for (int i = 0; i < 4; ++i) e.ID[i] = stoi(parts[i + 1]);
+                e.materialId = 0;
                 grid.elements.push_back(e);
             }
-            catch (const exception& e) {
-                cerr << "Warning: blad parsowania elementu: \"" << trimmedLine << "\" (" << e.what() << ")\n";
-                continue;
+            catch (const exception& ex) {
+                cerr << "Warning: failed to parse element: \"" << trimmedLine << "\" (" << ex.what() << ")\n";
             }
+            continue;
+        }
+
+        if (readingBCOut) {
+            auto parts = splitAndTrim(trimmedLine, ',');
+            for (const auto& p : parts) {
+                try {
+                    int nodeID = stoi(p);
+                    if (find(bcOutList.begin(), bcOutList.end(), nodeID) == bcOutList.end())
+                        bcOutList.push_back(nodeID);
+                    if (nodeID > 0 && nodeID <= static_cast<int>(grid.nodes.size())) {
+                        if (grid.nodes[nodeID - 1].BC == 0)
+                            grid.nodes[nodeID - 1].BC = 1;
+                    }
+                }
+                catch (...) {
+                    cerr << "Warning: bad BC_OUT token: \"" << p << "\"\n";
+                }
+            }
+            continue;
+        }
+
+        if (readingBCIn) {
+            auto parts = splitAndTrim(trimmedLine, ',');
+            for (const auto& p : parts) {
+                try {
+                    int nodeID = stoi(p);
+                    if (find(bcInList.begin(), bcInList.end(), nodeID) == bcInList.end())
+                        bcInList.push_back(nodeID);
+                    if (nodeID > 0 && nodeID <= static_cast<int>(grid.nodes.size())) {
+                        grid.nodes[nodeID - 1].BC = 2;
+                    }
+                }
+                catch (...) {
+                    cerr << "Warning: bad BC_IN token: \"" << p << "\"\n";
+                }
+            }
+            continue;
         }
 
         if (readingBC) {
@@ -644,31 +770,121 @@ bool loadFromFile(const string& filename, GlobalData& globalData, Grid& grid) {
             for (const auto& p : parts) {
                 try {
                     int nodeID = stoi(p);
-                    grid.boundaryNodes.push_back(nodeID);
-
-                    if (nodeID <= grid.nodes.size()) {
-
-                        grid.nodes[nodeID - 1].BC = 1;
+                    if (find(bcCombinedList.begin(), bcCombinedList.end(), nodeID) == bcCombinedList.end())
+                        bcCombinedList.push_back(nodeID);
+                    if (nodeID > 0 && nodeID <= static_cast<int>(grid.nodes.size())) {
+                        if (grid.nodes[nodeID - 1].BC == 0) {
+                            if (find(bcOutList.begin(), bcOutList.end(), nodeID) != bcOutList.end()) grid.nodes[nodeID - 1].BC = 1;
+                            else if (find(bcInList.begin(), bcInList.end(), nodeID) != bcInList.end()) grid.nodes[nodeID - 1].BC = 2;
+                            else grid.nodes[nodeID - 1].BC = 1;
+                        }
                     }
                 }
                 catch (...) {
-                    cerr << "Warning: blad parsowania wezla BC: \"" << trimmedLine << "\"\n";
+                    cerr << "Warning: bad BC token: \"" << p << "\"\n";
                 }
             }
+            continue;
         }
 
-    } // while getline
+        if (readingMaterials) {
+            auto parts = splitAndTrim(trimmedLine, ',');
+            if (parts.size() < 4) {
+                cerr << "Warning: skipping malformed Materials line: \"" << trimmedLine << "\"\n";
+                continue;
+            }
+            try {
+                int mid = stoi(parts[0]);
+                string name;
+                double k = 0.0, rho = 0.0, cp = 0.0;
+                if (parts.size() == 4) {
+                    name = "mat" + to_string(mid);
+                    k = stod(parts[1]);
+                    rho = stod(parts[2]);
+                    cp = stod(parts[3]);
+                }
+                else {
+                    name = parts[1];
+                    k = stod(parts[2]);
+                    rho = stod(parts[3]);
+                    cp = stod(parts[4]);
+                }
+                Material mat(mid, name, k, rho, cp);
+                globalData.materialIdToIndex[mid] = globalData.materials.size();
+                globalData.materials.push_back(mat);
+            }
+            catch (const exception& ex) {
+                cerr << "Warning: failed to parse material: \"" << trimmedLine << "\" (" << ex.what() << ")\n";
+            }
+            continue;
+        }
 
-    // ustawienie liczników
+        if (readingElementMat) {
+            auto parts = splitAndTrim(trimmedLine, ',');
+            if (parts.size() < 2) {
+                cerr << "Warning: skipping malformed ElementMat line: \"" << trimmedLine << "\"\n";
+                continue;
+            }
+            try {
+                int elemId = stoi(parts[0]);
+                int matId = stoi(parts[1]);
+                bool found = false;
+                for (auto& el : grid.elements) {
+                    if (el.id == elemId) {
+                        el.materialId = matId;
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) {
+                    cerr << "Warning: Element id " << elemId << " not found for ElementMat mapping\n";
+                }
+            }
+            catch (...) {
+                cerr << "Warning: bad ElementMat tokens in line: \"" << trimmedLine << "\"\n";
+            }
+            continue;
+        }
+    }
+
+    if (!bcCombinedList.empty()) {
+        grid.boundaryNodes = bcCombinedList;
+    }
+    else if (!bcOutList.empty() && !bcInList.empty()) {
+        grid.boundaryNodes.clear();
+        size_t nOut = bcOutList.size();
+        size_t nIn = bcInList.size();
+        size_t nMax = max(nOut, nIn);
+        for (size_t i = 0; i < nMax; ++i) {
+            if (i < nOut) grid.boundaryNodes.push_back(bcOutList[i]);
+            if (i < nIn)  grid.boundaryNodes.push_back(bcInList[i]);
+        }
+        vector<int> uniqueList;
+        uniqueList.reserve(grid.boundaryNodes.size());
+        for (int id : grid.boundaryNodes) {
+            if (find(uniqueList.begin(), uniqueList.end(), id) == uniqueList.end())
+                uniqueList.push_back(id);
+        }
+        grid.boundaryNodes.swap(uniqueList);
+    }
+    else {
+        grid.boundaryNodes.clear();
+        for (const auto& n : grid.nodes) {
+            if (n.BC != 0) grid.boundaryNodes.push_back(n.id);
+        }
+    }
+
     grid.nN = static_cast<int>(grid.nodes.size());
     grid.nE = static_cast<int>(grid.elements.size());
-    
     if (globalData.nN == 0) globalData.nN = grid.nN;
     if (globalData.nE == 0) globalData.nE = grid.nE;
 
     file.close();
     return true;
 }
+
+
+
 
 void printDerivativeTable(const vector<vector<double>>& derivatives, const string& label) {
     cout << "\nTabela: " << label << endl;
@@ -699,6 +915,7 @@ vector<double> solveLinearSystem(vector<vector<double>> A, vector<double> b) {
 
    
     for (int i = 0; i < N; ++i) {
+       // cout << "\n Zaczynam pivot"<<endl;
         // pivot
         double maxEl = fabs(A[i][i]);
         int maxRow = i;
@@ -711,7 +928,7 @@ vector<double> solveLinearSystem(vector<vector<double>> A, vector<double> b) {
         swap(A[i], A[maxRow]);
         swap(b[i], b[maxRow]);
 
-      
+       // cout << "\n robie trojaktna zerowa" << endl;
         for (int k = i + 1; k < N; ++k) {
             double c = A[k][i] / A[i][i];
             for (int j = i; j < N; ++j)
@@ -719,7 +936,7 @@ vector<double> solveLinearSystem(vector<vector<double>> A, vector<double> b) {
             b[k] -= c * b[i];
         }
     }
-
+    //cout << "\n podstawiam" << endl;
     // podstawienie
     for (int i = N - 1; i >= 0; --i) {
         double sum = b[i];
@@ -732,6 +949,37 @@ vector<double> solveLinearSystem(vector<vector<double>> A, vector<double> b) {
 }
 
 
+auto printWrapped = [&](const vector<int>& vec, const string& header, int per_line = 12) {
+    std::cout << header << "\n";
+    if (vec.empty()) {
+        cout << " (brak)\n";
+        return;
+    }
+    for (size_t i = 0; i < vec.size(); i += per_line) {
+        size_t end = min(vec.size(), i + per_line);
+        cout << " ";
+        for (size_t j = i; j < end; ++j) {
+            cout << vec[j];
+            if (j + 1 < end) cout << ", ";
+        }
+        cout << "\n";
+    }
+    };
+
+bool isCCW(const Element& e, const Grid& g) {
+    auto& n1 = g.nodes[e.ID[0] - 1];
+    auto& n2 = g.nodes[e.ID[1] - 1];
+    auto& n3 = g.nodes[e.ID[2] - 1];
+    
+    double cross =
+        (n2.x - n1.x) * (n3.y - n1.y) -
+        (n2.y - n1.y) * (n3.x - n1.x);
+
+    return cross > 0;
+}
+
+
+
 
 
 int main() {
@@ -739,22 +987,39 @@ int main() {
     Grid grid;
     
     vector<string> Pliki = { "Test1_4_4.txt", "Test2_4_4MixGrid.txt",
-                             "Test3_31_31_kwadrat.txt", "Test4_testowe.txt" };
+                             "Test3_31_31_kwadrat.txt", "Test4_testowe.txt", "wall.txt", "small.txt"};
 
 
     //zmien
-    if (!loadFromFile(Pliki[0], globalData, grid)) return 1;
+    if (!loadFromFile(Pliki[5], globalData, grid)) return 1;
+
+    globalData.materials.push_back(Material(1, "tynk", 0.7, 1800.0, 840.0));
+    globalData.materialIdToIndex[1] = 0;
+    globalData.materials.push_back(Material(2, "styropian", 0.032, 35.0, 1400.0));
+    globalData.materialIdToIndex[2] = 1;
+    globalData.materials.push_back(Material(3, "cegla", 0.6, 1800.0, 840.0));
+    globalData.materialIdToIndex[3] = 2;
+
+
+    vector<int> bc_out_nodes;
+    vector<int> bc_in_nodes;
+
+    for (const auto& n : grid.nodes) {
+        if (n.BC == 1) bc_out_nodes.push_back(n.id);
+        else if (n.BC == 2) bc_in_nodes.push_back(n.id);
+    }
 
    
     cout << "Dane globalne:\n";
     cout << "SimulationTime: " << globalData.SimulationTime << "\n";
     cout << "SimulationStepTime: " << globalData.SimulationStepTime << "\n";
-    cout << "Conductivity: " << globalData.Conductivity << "\n";
+    //cout << "Conductivity: " << globalData.Conductivity << "\n";
     cout << "Alfa: " << globalData.Alfa << "\n";
-    cout << "Tot: " << globalData.Tot << "\n";
+    cout << "Tot In: " << globalData.TotIn << "\n";
+    cout << "Tot out: " << globalData.TotOut << "\n";
     cout << "InitialTemp: " << globalData.InitialTemp << "\n";
-    cout << "Density: " << globalData.Density << "\n";
-    cout << "SpecificHeat: " << globalData.SpecificHeat << "\n";
+    //cout << "Density: " << globalData.Density << "\n";
+    //cout << "SpecificHeat: " << globalData.SpecificHeat << "\n";
     cout << "Nodes (global): " << globalData.nN << "\tElements (global): " << globalData.nE << "\n\n";
 
     //  wezly i elementy
@@ -769,14 +1034,20 @@ int main() {
         cout << "\n";
     }
 
-    cout << "\nWezly z warunkami brzegowymi (BC):\n";
-    for (int n : grid.boundaryNodes) cout << n << " ";
-    cout << "\n\n";
+    printWrapped(bc_out_nodes, "\n*BC_OUT");
+    printWrapped(bc_in_nodes, "\n*BC_IN");
+    printWrapped(grid.boundaryNodes, "\n*BC");
 
 
     ElemUniv eUniv(globalData.npc); 
     int npc = eUniv.npc;
     Surface surface(globalData.npc);
+
+    cout << "Element 1 nodes:\n";
+    for (int i = 0; i < 4; i++) {
+        int id = grid.elements[0].ID[i] - 1;
+        cout << grid.nodes[id].x << " " << grid.nodes[id].y << endl;
+    }
 
 
 
@@ -836,9 +1107,14 @@ int main() {
         //    cout << "\n";
         //}
 
-       
 
-        elem.obliczH(eUniv, grid, globalData.Conductivity, globalData.Density, globalData.SpecificHeat);
+        auto it = globalData.materialIdToIndex.find(elem.materialId);
+        if (it == globalData.materialIdToIndex.end()) {
+            cerr << "Brak materialu dla elementu " << elem.id << endl;
+            exit(1);
+        }
+        const Material& mat = globalData.materials[it->second];
+        elem.obliczH(eUniv, grid, mat);
 
         //// Wypisz macierz H elementu
         //cout << "\nMacierz H elementu " << elem.id << ":\n";
@@ -854,7 +1130,7 @@ int main() {
 
 
 
-        elem.obliczHbc(surface, grid, globalData.Alfa);
+        elem.obliczHbc(surface, grid, globalData.AlfaOut, globalData.AlfaIn);
 
         // Wypisz macierz Hbc elementu
         //cout << "\nMacierz Hbc elementu " << elem.id << ":\n";
@@ -869,7 +1145,7 @@ int main() {
 
         
 
-        elem.obliczP(surface, grid, globalData.Alfa , globalData.Tot);
+        elem.obliczP(surface, grid, globalData.AlfaOut, globalData.AlfaIn, globalData.TotOut, globalData.TotIn);
         
         // Wypisz wektor P elementu
        // cout << "\nWektor P elementu " << elem.id << ":\n";
@@ -965,7 +1241,7 @@ int main() {
 
 
     }
-
+    
 
     return 0;
 }
