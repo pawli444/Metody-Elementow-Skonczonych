@@ -113,10 +113,10 @@ vector<string> splitAndTrim(const string& s, char delim) {
     return parts;
 }
 
-class Node;      
-class Element;   
-class Grid;      
-class ElemUniv;  
+class Node;
+class Element;
+class Grid;
+class ElemUniv;
 class Jakobian;
 
 
@@ -194,7 +194,7 @@ public:
 
     Surface(int npc) : npc(npc), gauss(npc)
     {
-        N.resize(4); 
+        N.resize(4);
         for (int e = 0; e < 4; e++)
             N[e].resize(npc, vector<double>(4, 0.0));
 
@@ -202,19 +202,21 @@ public:
         {
             double s = gauss.xi[p];
 
-            
+            // KrawêdŸ 0: wêz³y 0 -> 1 (dolna, idzie w prawo)
             N[0][p][0] = 0.5 * (1 - s);
             N[0][p][1] = 0.5 * (1 + s);
 
-          
+            // KrawêdŸ 1: wêz³y 1 -> 2 (prawa, idzie w górê)
             N[1][p][1] = 0.5 * (1 - s);
             N[1][p][2] = 0.5 * (1 + s);
 
-           
+            // KrawêdŸ 2: wêz³y 2 -> 3 (górna, idzie w lewo)
+            // s=-1 odpowiada wêz³owi 2, s=+1 odpowiada wêz³owi 3
             N[2][p][2] = 0.5 * (1 - s);
             N[2][p][3] = 0.5 * (1 + s);
 
-            
+            // KrawêdŸ 3: wêz³y 3 -> 0 (lewa, idzie w dó³)
+            // s=-1 odpowiada wêz³owi 3, s=+1 odpowiada wêz³owi 0
             N[3][p][3] = 0.5 * (1 - s);
             N[3][p][0] = 0.5 * (1 + s);
         }
@@ -250,7 +252,7 @@ public:
 
 
     void coutJakobian() {
-        
+
         std::cout << "Macierz J:\n";
         std::cout << "[" << J[0][0] << ", " << J[0][1] << "]\n";
         std::cout << "[" << J[1][0] << ", " << J[1][1] << "]\n";
@@ -301,55 +303,52 @@ public:
     int materialId = 0;
 
     void obliczH(const ElemUniv& eUniv, const Grid& grid, const Material& M) {
-
-
-        
         H.assign(4, vector<double>(4, 0.0));
         C.assign(4, vector<double>(4, 0.0));
-
 
         double conductivity = M.conductivity;
         double density = M.density;
         double specificHeat = M.specificHeat;
 
-            int npc = eUniv.npc;
+        int npc = eUniv.npc;
 
+        // Najpierw oblicz consistent mass matrix tymczasowo
+        vector<vector<double>> C_consistent(4, vector<double>(4, 0.0));
 
-            for (int p = 0; p < npc * npc; p++)
-            {
-                Jakobian& J = jakobiany[p];
+        for (int p = 0; p < npc * npc; p++) {
+            Jakobian& J = jakobiany[p];
 
+            int col = p % npc;
+            int row = p / npc;
 
+            double w_x = eUniv.gauss.w[col];
+            double w_y = eUniv.gauss.w[row];
 
-                int col = p % npc;   
-                int row = p / npc;     
-                
-                double w_x = eUniv.gauss.w[col];
-                double w_y = eUniv.gauss.w[row];
+            const vector<double>& fKszt = eUniv.N[p];
 
-                const vector<double>& fKszt = eUniv.N[p];
-
-                for (int i = 0; i < 4; i++)
-                {
-                    for (int j = 0; j < 4; j++)
-                    {
-
-                        H[i][j] += conductivity * (J.dN_dx[i] * J.dN_dx[j] + J.dN_dy[i] * J.dN_dy[j]) * J.detJ * w_x * w_y;
-                        C[i][j] += specificHeat * density * (fKszt[i] * fKszt[j]) * J.detJ * w_x * w_y;
-
-                    }
+            for (int i = 0; i < 4; i++) {
+                for (int j = 0; j < 4; j++) {
+                    H[i][j] += conductivity * (J.dN_dx[i] * J.dN_dx[j] + J.dN_dy[i] * J.dN_dy[j]) * J.detJ * w_x * w_y;
+                    C_consistent[i][j] += specificHeat * density * (fKszt[i] * fKszt[j]) * J.detJ * w_x * w_y;
                 }
-
             }
+        }
 
-        
-
+        // LUMPED MASS MATRIX - suma wiersza na diagonalê
+        // To eliminuje oscylacje numeryczne na granicach materia³ów
+        for (int i = 0; i < 4; i++) {
+            double rowSum = 0.0;
+            for (int j = 0; j < 4; j++) {
+                rowSum += C_consistent[i][j];
+            }
+            C[i][i] = rowSum;  // Tylko diagonala, reszta = 0
+        }
     }
 
 
 
 
-    void obliczHbc( const Surface& surface, const Grid& grid, double alfaOut, double alfaIn);
+    void obliczHbc(const Surface& surface, const Grid& grid, double alfaOut, double alfaIn);
     void obliczP(const Surface& surface, const Grid& grid, double alfaOut, double alfaIn, double TotOut, double TotIn);
 };
 
@@ -365,38 +364,38 @@ public:
 };
 
 
-void Element::obliczHbc( const Surface& surface, const Grid& grid, double alfaOut, double alfaIn) {
-
+void Element::obliczHbc(const Surface& surface, const Grid& grid, double alfaOut, double alfaIn) {
     Hbc.assign(4, vector<double>(4, 0.0));
-
     const int edge[4][2] = { {0,1}, {1,2}, {2,3}, {3,0} };
-
     int npc = surface.npc;
-
-
 
     for (int e = 0; e < 4; e++)
     {
         int n1 = ID[edge[e][0]] - 1;
         int n2 = ID[edge[e][1]] - 1;
 
-
         if (grid.nodes[n1].BC == 0 || grid.nodes[n2].BC == 0)
-        {
             continue;
-        }
 
         double alfaEdge;
+        int bcType = 0;
 
         if (grid.nodes[n1].BC == 1 && grid.nodes[n2].BC == 1) {
             alfaEdge = alfaOut;
+            bcType = 1;
         }
         else if (grid.nodes[n1].BC == 2 && grid.nodes[n2].BC == 2) {
             alfaEdge = alfaIn;
+            bcType = 2;
         }
         else {
             continue;
         }
+
+        // DIAGNOSTYKA - odkomentuj: 
+        cout << "Elem " << id << " edge " << e 
+             << " nodes(" << (n1+1) << "," << (n2+1) << ")"
+             << " BC=" << bcType << " alfa=" << alfaEdge << endl;
 
         double x1 = grid.nodes[n1].x, y1 = grid.nodes[n1].y;
         double x2 = grid.nodes[n2].x, y2 = grid.nodes[n2].y;
@@ -404,19 +403,15 @@ void Element::obliczHbc( const Surface& surface, const Grid& grid, double alfaOu
         double dl = sqrt((x2 - x1) * (x2 - x1) + (y2 - y1) * (y2 - y1));
         double detJ = dl / 2.0;
 
-
         for (int p = 0; p < npc; p++)
         {
             const vector<double>& fKsz = surface.N[e][p];
-
             double w = surface.gauss.w[p];
 
             for (int i = 0; i < 4; i++)
                 for (int j = 0; j < 4; j++)
                     Hbc[i][j] += alfaEdge * fKsz[i] * fKsz[j] * detJ * w;
         }
-
-
     }
 }
 
@@ -471,8 +466,8 @@ void Element::obliczP(const Surface& surface, const Grid& grid, double alfaOut, 
             double w = surface.gauss.w[p];
 
             for (int i = 0; i < 4; i++)
-                
-                    P[i] += totEdge * alfaEdge * fKsz[i] * detJ * w;
+
+                P[i] += totEdge * alfaEdge * fKsz[i] * detJ * w;
         }
 
 
@@ -506,7 +501,7 @@ public:
 
 Jakobian::Jakobian(const Element& elem, const Grid& grid, const ElemUniv& eUniv, int p) {
 
-    
+
     double x[4], y[4];
     for (int i = 0; i < 4; i++) {
         int id = elem.ID[i] - 1;       // -1 bo w pliku wezly liczone od 1
@@ -540,6 +535,7 @@ Jakobian::Jakobian(const Element& elem, const Grid& grid, const ElemUniv& eUniv,
         dN_dx[i] = Jodwr[0][0] * eUniv.dN_dE[p][i] + Jodwr[0][1] * eUniv.dN_dN[p][i];
         dN_dy[i] = Jodwr[1][0] * eUniv.dN_dE[p][i] + Jodwr[1][1] * eUniv.dN_dN[p][i];
     }
+
 }
 
 
@@ -574,16 +570,16 @@ bool parseNumberAfterKey(const string& line, double& out) {
 }
 
 
-bool isCCW(const Element& e, const Grid& g) {
-    auto& n1 = g.nodes[e.ID[0] - 1];
-    auto& n2 = g.nodes[e.ID[1] - 1];
-    auto& n3 = g.nodes[e.ID[2] - 1];
-
-    double cross =
-        (n2.x - n1.x) * (n3.y - n1.y) -
-        (n2.y - n1.y) * (n3.x - n1.x);
-
-    return cross > 0;
+bool isCCW(double x[4], double y[4]) {
+    // Oblicz pole ze wzoru Gaussa (shoelace formula)
+    // Dodatnie = CCW, ujemne = CW
+    double area = 0.0;
+    for (int i = 0; i < 4; i++) {
+        int j = (i + 1) % 4;
+        area += x[i] * y[j];
+        area -= x[j] * y[i];
+    }
+    return area > 0;
 }
 
 bool loadFromFile(const string& filename, GlobalData& globalData, Grid& grid) {
@@ -728,8 +724,18 @@ bool loadFromFile(const string& filename, GlobalData& globalData, Grid& grid) {
 
                 //to
 
-                if (!isCCW(e, grid)) {
-                    swap(e.ID[1], e.ID[3]);   
+                        // SprawdŸ orientacjê u¿ywaj¹c wspó³rzêdnych
+                double x[4], y[4];
+                for (int i = 0; i < 4; i++) {
+                    int nid = e.ID[i] - 1;
+                    x[i] = grid.nodes[nid].x;
+                    y[i] = grid.nodes[nid].y;
+                }
+
+                if (!isCCW(x, y)) {
+                    // Odwróæ kolejnoœæ:  zamieñ wêz³y 1 i 3
+                    swap(e.ID[1], e.ID[3]);
+                    cout << "Element " << e.id << " - zamieniono na CCW" << endl;
                 }
 
                 grid.elements.push_back(e);
@@ -747,13 +753,19 @@ bool loadFromFile(const string& filename, GlobalData& globalData, Grid& grid) {
                     int nodeID = stoi(p);
                     if (find(bcOutList.begin(), bcOutList.end(), nodeID) == bcOutList.end())
                         bcOutList.push_back(nodeID);
+
                     if (nodeID > 0 && nodeID <= static_cast<int>(grid.nodes.size())) {
-                        if (grid.nodes[nodeID - 1].BC == 0)
-                            grid.nodes[nodeID - 1].BC = 1;
+                        int& bc = grid.nodes[nodeID - 1].BC;
+                        if (bc != 0 && bc != 1) {
+                            cerr << "ERROR: Node " << nodeID << " already has BC=" << bc
+                                << " but is listed in *BC_OUT\n";
+                            exit(1);
+                        }
+                        bc = 1; // OUT
                     }
                 }
                 catch (...) {
-                    cerr << "Warning: bad BC_OUT token: \"" << p << "\"\n";
+                    cerr << "Warning: bad *BC_OUT token: \"" << p << "\"\n";
                 }
             }
             continue;
@@ -766,12 +778,19 @@ bool loadFromFile(const string& filename, GlobalData& globalData, Grid& grid) {
                     int nodeID = stoi(p);
                     if (find(bcInList.begin(), bcInList.end(), nodeID) == bcInList.end())
                         bcInList.push_back(nodeID);
+
                     if (nodeID > 0 && nodeID <= static_cast<int>(grid.nodes.size())) {
-                        grid.nodes[nodeID - 1].BC = 2;
+                        int& bc = grid.nodes[nodeID - 1].BC;
+                        if (bc != 0 && bc != 2) {
+                            cerr << "ERROR: Node " << nodeID << " already has BC=" << bc
+                                << " but is listed in *BC_IN\n";
+                            exit(1);
+                        }
+                        bc = 2; // IN
                     }
                 }
                 catch (...) {
-                    cerr << "Warning: bad BC_IN token: \"" << p << "\"\n";
+                    cerr << "Warning: bad *BC_IN token: \"" << p << "\"\n";
                 }
             }
             continue;
@@ -784,16 +803,12 @@ bool loadFromFile(const string& filename, GlobalData& globalData, Grid& grid) {
                     int nodeID = stoi(p);
                     if (find(bcCombinedList.begin(), bcCombinedList.end(), nodeID) == bcCombinedList.end())
                         bcCombinedList.push_back(nodeID);
-                    if (nodeID > 0 && nodeID <= static_cast<int>(grid.nodes.size())) {
-                        if (grid.nodes[nodeID - 1].BC == 0) {
-                            if (find(bcOutList.begin(), bcOutList.end(), nodeID) != bcOutList.end()) grid.nodes[nodeID - 1].BC = 1;
-                            else if (find(bcInList.begin(), bcInList.end(), nodeID) != bcInList.end()) grid.nodes[nodeID - 1].BC = 2;
-                            else grid.nodes[nodeID - 1].BC = 1;
-                        }
-                    }
+
+                    // UWAGA: tu celowo NIE ustawiamy Node.BC.
+                    // Typy bior¹ siê tylko z *BC_OUT i *BC_IN.
                 }
                 catch (...) {
-                    cerr << "Warning: bad BC token: \"" << p << "\"\n";
+                    cerr << "Warning: bad *BC token: \"" << p << "\"\n";
                 }
             }
             continue;
@@ -925,10 +940,10 @@ vector<double> solveLinearSystem(vector<vector<double>> A, vector<double> b) {
 
 
 
-   
+
     for (int i = 0; i < N; ++i) {
-       // cout << "\n Zaczynam pivot"<<endl;
-        // pivot
+        // cout << "\n Zaczynam pivot"<<endl;
+         // pivot
         double maxEl = fabs(A[i][i]);
         int maxRow = i;
         for (int k = i + 1; k < N; ++k) {
@@ -940,7 +955,7 @@ vector<double> solveLinearSystem(vector<vector<double>> A, vector<double> b) {
         swap(A[i], A[maxRow]);
         swap(b[i], b[maxRow]);
 
-       // cout << "\n robie trojaktna zerowa" << endl;
+        // cout << "\n robie trojaktna zerowa" << endl;
         for (int k = i + 1; k < N; ++k) {
             double c = A[k][i] / A[i][i];
             for (int j = i; j < N; ++j)
@@ -987,9 +1002,9 @@ auto printWrapped = [&](const vector<int>& vec, const string& header, int per_li
 int main() {
     GlobalData globalData;
     Grid grid;
-    
+
     vector<string> Pliki = { "Test1_4_4.txt", "Test2_4_4MixGrid.txt",
-                             "Test3_31_31_kwadrat.txt", "Test4_testowe.txt", "wall.txt", "small.txt"};
+                             "Test3_31_31_kwadrat.txt", "Test4_testowe.txt", "wall.txt", "small.txt" };
 
 
     //zmien
@@ -1003,9 +1018,10 @@ int main() {
     //globalData.materialIdToIndex[3] = 2;
 
 
-    cout << endl << endl << endl << endl << endl << "wielkosc noway"<< globalData.materials.size() <<endl << endl << endl << endl << endl << endl;
+    cout << endl << endl << endl << endl << endl << "wielkosc noway" << globalData.materials.size() << endl << endl << endl << endl << endl << endl;
 
-
+    cout << "TotOut=" << globalData.TotOut << " TotIn=" << globalData.TotIn << "\n";
+    cout << "AlfaOut=" << globalData.AlfaOut << " AlfaIn=" << globalData.AlfaIn << "\n";
     for (int i = 0; i < globalData.materials.size(); i++)
     {
         cout << endl << globalData.materials[i].name << endl;
@@ -1029,7 +1045,7 @@ int main() {
         else if (n.BC == 2) bc_in_nodes.push_back(n.id);
     }
 
-   
+
     cout << "Dane globalne:\n";
     cout << "SimulationTime: " << globalData.SimulationTime << "\n";
     cout << "SimulationStepTime: " << globalData.SimulationStepTime << "\n";
@@ -1055,7 +1071,7 @@ int main() {
     printWrapped(grid.boundaryNodes, "\n*BC");
 
 
-    ElemUniv eUniv(globalData.npc); 
+    ElemUniv eUniv(globalData.npc);
     int npc = eUniv.npc;
     Surface surface(globalData.npc);
 
@@ -1076,14 +1092,14 @@ int main() {
     vector<vector<double>> Hglobal_plus_Hbc(grid.nN, vector<double>(grid.nN, 0.0));
 
 
-    
+
     for (auto& elem : grid.elements) {
 
         elem.jakobiany.clear();
-        
+
         for (int p = 0; p < npc * npc; ++p) {
             Jakobian J(elem, grid, eUniv, p);
-           
+
             if (fabs(J.detJ) < 1e-12) {
                 cerr << "Warning: detJ bliski 0 w elemencie " << elem.id << " przy pc=" << p << "\n";
             }
@@ -1091,7 +1107,7 @@ int main() {
             // J.coutJakobian(); 
         }
 
-       
+
         //cout << fixed << setprecision(6);
         //cout << "\n -------------------------------------------------------------------------------------------------------------------\n";
         //cout << "\n\n\nElement " << elem.id << "\n";
@@ -1143,7 +1159,23 @@ int main() {
         //    cout << endl;
         //}
 
+        if (elem.materialId == 2 && elem.id == 2) {  // pierwszy element styropianu
+            cout << "\n=== Macierz C dla elementu styropianu (id=2) ===" << endl;
+            for (int i = 0; i < 4; i++) {
+                for (int j = 0; j < 4; j++) {
+                    cout << setw(12) << elem.C[i][j];
+                }
+                cout << endl;
+            }
 
+            // SprawdŸ sumê wierszy (powinna byæ dodatnia)
+            cout << "Suma wierszy C:" << endl;
+            for (int i = 0; i < 4; i++) {
+                double sum = 0;
+                for (int j = 0; j < 4; j++) sum += elem.C[i][j];
+                cout << "  wiersz " << i << ":  " << sum << endl;
+            }
+        }
 
 
         elem.obliczHbc(surface, grid, globalData.AlfaOut, globalData.AlfaIn);
@@ -1159,10 +1191,16 @@ int main() {
         //    cout << endl;
         //}
 
-        
+
 
         elem.obliczP(surface, grid, globalData.AlfaOut, globalData.AlfaIn, globalData.TotOut, globalData.TotIn);
-        
+
+        if (elem.id <= 10 || elem.id > 80) {  // elementy brzegowe
+            cout << "Element " << elem.id << " P = [";
+            for (int i = 0; i < 4; i++) cout << elem.P[i] << " ";
+            cout << "]\n";
+        }
+
         // Wypisz wektor P elementu
        // cout << "\nWektor P elementu " << elem.id << ":\n";
        // for (int i = 0; i < 4; ++i) {
@@ -1179,98 +1217,131 @@ int main() {
 
             for (int b = 0; b < 4; ++b) {
                 int gj = elem.ID[b] - 1;
-                Hglobal[gi][gj] += elem.H[a][b];                   
+                Hglobal[gi][gj] += elem.H[a][b];
                 Hbcglobal[gi][gj] += elem.Hbc[a][b];
                 Cglobal[gi][gj] += elem.C[a][b];
-                Hglobal_plus_Hbc[gi][gj] += elem.H[a][b] + elem.Hbc[a][b]; 
+                Hglobal_plus_Hbc[gi][gj] += elem.H[a][b] + elem.Hbc[a][b];
             }
         }
 
-    } 
+    }
 
-   // cout << "\nGlobalny wektor P:\n";
-   // for (int i = 0; i < grid.nN; ++i)
-      
-     //   cout << "Node " << (i + 1) << " : " << Pglobal[i] << "\n";
+    // cout << "\nGlobalny wektor P:\n";
+    // for (int i = 0; i < grid.nN; ++i)
 
-  //  printMatrix(Hglobal, "Globalna macierz H:");
+      //   cout << "Node " << (i + 1) << " : " << Pglobal[i] << "\n";
 
-  //  printMatrix(Cglobal, "Globalna macierz C");
+   //  printMatrix(Hglobal, "Globalna macierz H:");
 
-  //  printMatrix(Hbcglobal, "HBCGLOBAL");
+   //  printMatrix(Cglobal, "Globalna macierz C");
 
-   // printMatrix(Hglobal_plus_Hbc, "Globalna macierz H + Hbc");
+   //  printMatrix(Hbcglobal, "HBCGLOBAL");
+
+    // printMatrix(Hglobal_plus_Hbc, "Globalna macierz H + Hbc");
+
+    cout << "\n=== DIAGNOSTYKA Hbc dla BC_OUT ===" << endl;
+    for (int i = 0; i < grid.nN; i++) {
+        if (grid.nodes[i].BC == 1) {  // OUT
+            cout << "Node " << (i + 1) << " Hbc_diag=" << Hbcglobal[i][i] << endl;
+        }
+    }
+
+    cout << "\n=== DIAGNOSTYKA Hbc dla BC_IN ===" << endl;
+    for (int i = 0; i < grid.nN; i++) {
+        if (grid.nodes[i].BC == 2) {  // IN
+            cout << "Node " << (i + 1) << " Hbc_diag=" << Hbcglobal[i][i] << endl;
+        }
+    }
+
+    // Dodaj PRZED pêtl¹ czasow¹ (po agregacji macierzy globalnych):
+
+    cout << "\n=== KRYTYCZNA DIAGNOSTYKA ===" << endl;
+
+    // SprawdŸ wiersz 2 (wêze³ 3, x=0.080 - ten co ma overshoot)
+    int problemNode = 2;  // indeks 0-based dla wêz³a 3
+    cout << "\nWêze³ 3 (x=0.080) - analiza wiersza macierzy:" << endl;
+
+    cout << "H[2][*] = ";
+    double sumH = 0;
+    for (int j = 0; j < grid.nN; j++) {
+        if (fabs(Hglobal[problemNode][j]) > 1e-10) {
+            cout << "H[2][" << j << "]=" << Hglobal[problemNode][j] << "  ";
+            sumH += Hglobal[problemNode][j];
+        }
+    }
+    cout << "\nSuma H[2][*] = " << sumH << endl;
+
+    cout << "\nHbc[2][*] = ";
+    double sumHbc = 0;
+    for (int j = 0; j < grid.nN; j++) {
+        if (fabs(Hbcglobal[problemNode][j]) > 1e-10) {
+            cout << "Hbc[2][" << j << "]=" << Hbcglobal[problemNode][j] << "  ";
+            sumHbc += Hbcglobal[problemNode][j];
+        }
+    }
+    cout << "\nSuma Hbc[2][*] = " << sumHbc << endl;
+
+    cout << "\nC[2][*] = ";
+    double sumC = 0;
+    for (int j = 0; j < grid.nN; j++) {
+        if (fabs(Cglobal[problemNode][j]) > 1e-10) {
+            cout << "C[2][" << j << "]=" << Cglobal[problemNode][j] << "  ";
+            sumC += Cglobal[problemNode][j];
+        }
+    }
+    cout << "\nSuma C[2][*] = " << sumC << endl;
+
+    cout << "\nPglobal[2] = " << Pglobal[problemNode] << endl;
+
+    // SprawdŸ bilans energii dla wêz³a 3 w stanie pocz¹tkowym (T=23 wszêdzie)
+    double flux = 0;
+    for (int j = 0; j < grid.nN; j++) {
+        flux += (Hglobal[problemNode][j] + Hbcglobal[problemNode][j]) * 23.0;
+    }
+    cout << "\nStrumieñ ciep³a dla T=23 wszêdzie: " << flux << endl;
+    cout << "(powinien byæ ~0 dla wêz³a wewnêtrznego bez BC)" << endl;
 
 
-  
-    vector<vector<int>> materialNodes(globalData.materials.size());
+    vector<vector<int>> materialElements(globalData.materials.size());
     for (const auto& el : grid.elements) {
         auto it = globalData.materialIdToIndex.find(el.materialId);
         if (it == globalData.materialIdToIndex.end()) continue;
-        size_t midx = it->second;
-        auto& vec = materialNodes[midx];
-        for (int k = 0; k < 4; ++k) {
-            int nid = el.ID[k] - 1;
-            if (nid < 0 || nid >= grid.nN) continue;
-            // avoid duplicates (simple)
-            if (find(vec.begin(), vec.end(), nid) == vec.end())
-                vec.push_back(nid);
+        materialElements[it->second].push_back(el.id); // save el ID
+    }
+
+    // ZnajdŸ elementy zawieraj¹ce wêze³ 3
+    cout << "\n=== Elementy zawieraj¹ce wêze³ 3 ===" << endl;
+    for (const auto& elem : grid.elements) {
+        for (int i = 0; i < 4; i++) {
+            if (elem.ID[i] == 3) {
+                cout << "Element " << elem.id << " (material=" << elem.materialId << ")"
+                    << " wêz³y: " << elem.ID[0] << "," << elem.ID[1] << "," << elem.ID[2] << "," << elem.ID[3]
+                    << " - wêze³ 3 jest na pozycji lokalnej " << i << endl;
+            }
         }
     }
 
-    // debug: ile wêz³ów na materia³ i przyk³ady wspó³rzêdnych
-    for (size_t m = 0; m < globalData.materials.size(); ++m) {
-        auto& mat = globalData.materials[m];
-        auto& nodes = materialNodes[m];
-        cout << "DBG: Material " << mat.name << " id=" << mat.id
-            << " nodes=" << nodes.size() << " (sample up to 5): ";
-        for (size_t i = 0; i < nodes.size() && i < 5; ++i) {
-            int nid = nodes[i];
-            cout << "(" << nid + 1 << ":" << grid.nodes[nid].x << "," << grid.nodes[nid].y << ") ";
+    // Dla elementu 4 (pierwsza ceg³a):
+    for (const auto& elem : grid.elements) {
+        if (elem.id == 4) {
+            cout << "\n=== Macierz C dla elementu 4 (ceg³a) ===" << endl;
+            for (int i = 0; i < 4; i++) {
+                for (int j = 0; j < 4; j++) {
+                    cout << setw(12) << elem.C[i][j];
+                }
+                cout << endl;
+            }
+            double sumRow = 0;
+            for (int j = 0; j < 4; j++) sumRow += elem.C[0][j];
+            cout << "Suma wiersza 0:  " << sumRow << endl;
         }
-        cout << "\n";
     }
-
-    for (size_t m = 0; m < globalData.materials.size(); ++m) {
-        int outCnt = 0, inCnt = 0;
-        for (int nid : materialNodes[m]) {
-            int bc = grid.nodes[nid].BC;
-            if (bc == 1) ++outCnt;
-            else if (bc == 2) ++inCnt;
-        }
-        cout << "DBG: mat id=" << globalData.materials[m].id << " outNodes=" << outCnt << " inNodes=" << inCnt << "\n";
-    }
-
-    for (size_t m = 0; m < globalData.materials.size(); ++m) {
-        double sumP = 0, sumCdiag = 0;
-        for (int nid : materialNodes[m]) {
-            sumP += Pglobal[nid];
-            sumCdiag += Cglobal[nid][nid];
-        }
-        cout << "DBG: mat id=" << globalData.materials[m].id << " sumP=" << sumP << " sumCdiag=" << sumCdiag << "\n";
-    }
-
-    // temporary test: force all materials same
-    for (auto& mat : globalData.materials) {
-        mat.conductivity = 0.6;
-        mat.density = 1800.0;
-        mat.specificHeat = 840.0;
-    }
-
-    for (int i = 0; i < 10 && i < grid.elements.size(); ++i) {
-        const Element& el = grid.elements[i];
-        double cx = 0, cy = 0;
-        for (int k = 0; k < 4; ++k) { cx += grid.nodes[el.ID[k] - 1].x; cy += grid.nodes[el.ID[k] - 1].y; }
-        cx /= 4; cy /= 4;
-        cout << "el " << el.id << " matId=" << el.materialId << " centroid=(" << cx << "," << cy << ")\n";
-    }
-
 
     double dt = globalData.SimulationStepTime;
     double totalTime = globalData.SimulationTime;
     int steps = static_cast<int>(totalTime / dt);
 
-   
+
     vector<double> T(grid.nN, globalData.InitialTemp);
     vector<double> Tnew(grid.nN, 0.0);
 
@@ -1281,24 +1352,112 @@ int main() {
     for (int step = 1; step <= steps; step++) {
         time += dt;
 
-        
+
         vector<vector<double>> H_eff = Hglobal_plus_Hbc;
         vector<double> P_eff = Pglobal;
 
-        for (int i = 0; i < grid.nN; i++) {
-            for (int j = 0; j < grid.nN; j++) {
+        for (int i = 0; i < grid.nN; ++i)
+            for (int j = 0; j < grid.nN; ++j)
                 H_eff[i][j] += Cglobal[i][j] / dt;
-                P_eff[i] += (Cglobal[i][j] / dt) * T[j];
+
+        for (int i = 0; i < grid.nN; ++i) {
+            double acc = 0.0;
+            for (int j = 0; j < grid.nN; ++j)
+                acc += (Cglobal[i][j] / dt) * T[j];
+            P_eff[i] += acc;
+        }
+
+
+        Tnew = solveLinearSystem(H_eff, P_eff);
+
+
+        T = Tnew;
+
+        // Po kroku 1, wydrukuj temperatury wzd³u¿ linii y=0.5 (górny rz¹d):
+        if (step == 1) {
+            cout << "\n=== Temperatury wzd³u¿ y=0.5 (wêz³y 1-11) ===" << endl;
+            cout << "x\t\tT\t\tMaterial" << endl;
+            for (int i = 0; i < 11; i++) {
+                string mat;
+                if (i == 0) mat = "BC_OUT";
+                else if (i == 1) mat = "tynk";
+                else if (i == 2 || i == 3) mat = "styropian";
+                else if (i == 10) mat = "BC_IN";
+                else mat = "cegla";
+                cout << grid.nodes[i].x << "\t\t" << Tnew[i] << "\t\t" << mat << endl;
             }
         }
 
-       
-        Tnew = solveLinearSystem(H_eff, P_eff);
+        // Wewn¹trz pêtli czasowej, NA POCZ¥TKU kroku 1:
+        if (step == 1) {
+            int pn = 2;  // wêze³ 3 (indeks 2)
 
-        
-        T = Tnew;
+            cout << "\n=== ANALIZA KROKU 1 dla wêz³a 3 ===" << endl;
 
-       
+            // Oblicz H_eff[2][*]
+            cout << "H_eff[2][*] niezerowe:" << endl;
+            double sumHeff = 0;
+            for (int j = 0; j < grid.nN; j++) {
+                double heff = Hglobal_plus_Hbc[pn][j] + Cglobal[pn][j] / dt;
+                if (fabs(heff) > 1e-10) {
+                    cout << "  H_eff[2][" << j << "] = " << heff << endl;
+                    sumHeff += heff;
+                }
+            }
+            cout << "Suma H_eff[2][*] = " << sumHeff << endl;
+
+            // Oblicz P_eff[2]
+            double peff = Pglobal[pn];
+            for (int j = 0; j < grid.nN; j++) {
+                peff += (Cglobal[pn][j] / dt) * T[j];  // T[j] = 23 na pocz¹tku
+            }
+            cout << "\nP_eff[2] = " << peff << endl;
+
+            // Przewidywana temperatura (gdyby tylko diagonala)
+            double Heff_diag = Hglobal_plus_Hbc[pn][pn] + Cglobal[pn][pn] / dt;
+            cout << "\nH_eff[2][2] (diagonala) = " << Heff_diag << endl;
+            cout << "P_eff[2] / H_eff[2][2] = " << peff / Heff_diag << " (przybli¿ona T)" << endl;
+
+            // SprawdŸ równanie:  sum(H_eff[2][j] * T[j]) = P_eff[2]
+            // Czyli: H_eff[2][2]*T[2] + sum(H_eff[2][j]*T[j], j!=2) = P_eff[2]
+            // T[2] = (P_eff[2] - sum(H_eff[2][j]*T[j], j!=2)) / H_eff[2][2]
+
+            cout << "\n=== Sk³adniki równania ===" << endl;
+            cout << "P_eff[2] = " << peff << endl;
+            cout << "Suma C[2][j]/dt * T_old[j] = " << (Cglobal[pn][pn] / dt * 23.0) << " (tylko diag)" << endl;
+
+            double sumCT = 0;
+            for (int j = 0; j < grid.nN; j++) {
+                sumCT += (Cglobal[pn][j] / dt) * T[j];
+            }
+            cout << "Suma C[2][j]/dt * T_old[j] = " << sumCT << " (pe³na)" << endl;
+        }
+
+        if (step == 1) {
+            // Wydrukuj pe³ny wektor P_eff dla pierwszych 5 wêz³ów
+            cout << "\n=== P_eff (przed solverem) ===" << endl;
+            for (int i = 0; i < 5; i++) {
+                cout << "P_eff[" << i << "] = " << P_eff[i] << endl;
+            }
+
+            // Wydrukuj H_eff dla wêz³a 3 (wiersz 2)
+            cout << "\n=== H_eff wiersz 2 (wêze³ 3) ===" << endl;
+            for (int j = 0; j < 5; j++) {
+                cout << "H_eff[2][" << j << "] = " << H_eff[2][j] << endl;
+            }
+
+            // Rêcznie oblicz T[2] zak³adaj¹c T[j]=23 dla j!=2
+            double rhs = P_eff[2];
+            for (int j = 0; j < grid.nN; j++) {
+                if (j != 2) {
+                    rhs -= H_eff[2][j] * 23.0;  // zak³adamy T=23
+                }
+            }
+            cout << "\nRêczne obliczenie T[2] (zak³adaj¹c T[j]=23 dla j!=2):" << endl;
+            cout << "T[2] = " << rhs / H_eff[2][2] << endl;
+        }
+
+
         //cout << "\nCzas t = " << time << " s\n";
         //for (int i = 0; i < grid.nN; i++) {
         //    cout << "Node " << (i + 1) << " : " << T[i] << "\n";
@@ -1323,80 +1482,97 @@ int main() {
 
         int printEvery = 1; // drukuj co krok; zmieñ na np. 10 ¿eby rzadziej
 
-if (step % printEvery == 0) {
-    cout << fixed << setprecision(3);
-    cout << "\n\n======================================================================================";
-    cout << "\n Time[s] = " << time << "\n";
-    cout << "======================================================================================\n\n\n";
+        if (step % printEvery == 0) {
+            cout << fixed << setprecision(3);
+            cout << "\n\n======================================================================================";
+            cout << "\n Time[s] = " << time << "\n";
+            cout << "======================================================================================\n\n";
 
-    for (size_t m = 0; m < globalData.materials.size(); ++m) {
-        const auto &mat = globalData.materials[m];
-        const auto &nodes = materialNodes[m];
-        if (nodes.empty()) {
-            cout << "Material \"" << mat.name << "\" id=" << mat.id << ": (no nodes)\n";
-            continue;
+            for (size_t m = 0; m < globalData.materials.size(); ++m) {
+                const auto& mat = globalData.materials[m];
+                const auto& elemIds = materialElements[m];
+
+                cout << "----------------------------------------\n";
+                cout << " Material: " << mat.name << "   (id=" << mat.id << ")\n";
+                cout << "----------------------------------------\n";
+
+                if (elemIds.empty()) {
+                    cout << "(brak elementow)\n";
+                    cout << "----------------------------------------\n\n";
+                    continue;
+                }
+
+                double overallMin = numeric_limits<double>::infinity();
+                double overallMax = -numeric_limits<double>::infinity();
+
+                double bcMin = numeric_limits<double>::infinity();   // OUT dla tynku, IN dla cegly
+                double bcMax = -numeric_limits<double>::infinity();
+                int bcElemCount = 0;
+
+                // iterujemy po elementach tego materialu
+                for (int eid : elemIds) {
+                    // zak³adamy, ¿e elementy w grid.elements s¹ w kolejnoœci 1..nE
+                    // (u Ciebie tak jest w pliku: 1..90)
+                    const Element& el = grid.elements[eid - 1];
+
+                    // temperatura elementu = srednia z 4 wezlow
+                    double Te = 0.0;
+                    bool touchesBC = false;
+
+                    for (int k = 0; k < 4; ++k) {
+                        int nid = el.ID[k] - 1;
+                        Te += T[nid];
+
+                        int bc = grid.nodes[nid].BC;
+                        if (mat.id == 1 && bc == 1) touchesBC = true; // tynk -> OUT
+                        if (mat.id == 3 && bc == 2) touchesBC = true; // cegla -> IN
+                    }
+                    Te /= 4.0;
+
+                    if (isfinite(Te)) {
+                        overallMin = min(overallMin, Te);
+                        overallMax = max(overallMax, Te);
+
+                        if (touchesBC) {
+                            bcMin = min(bcMin, Te);
+                            bcMax = max(bcMax, Te);
+                            bcElemCount++;
+                        }
+                    }
+                }
+
+                cout << left << setw(22) << "ElemAvg Tmin:" << overallMin << "\n";
+                cout << left << setw(22) << "ElemAvg Tmax:" << overallMax << "\n";
+
+                if (mat.id == 1) {
+                    // tynk (OUT)
+                    if (bcElemCount > 0) {
+                        cout << left << setw(22) << "ElemAvg OUT Tmin:" << bcMin << "\n";
+                        cout << left << setw(22) << "ElemAvg OUT Tmax:" << bcMax << "\n";
+                    }
+                    else {
+                        cout << "Brak elementow materialu na BC_OUT\n";
+                    }
+                }
+                else if (mat.id == 3) {
+                    // cegla (IN)
+                    if (bcElemCount > 0) {
+                        cout << left << setw(22) << "ElemAvg IN Tmin:" << bcMin << "\n";
+                        cout << left << setw(22) << "ElemAvg IN Tmax:" << bcMax << "\n";
+                    }
+                    else {
+                        cout << "Brak elementow materialu na BC_IN\n";
+                    }
+                }
+
+                cout << "----------------------------------------\n\n";
+            }
         }
 
-        double overallMin = numeric_limits<double>::infinity();
-        double overallMax = -numeric_limits<double>::infinity();
-        double outMin = numeric_limits<double>::infinity();
-        double outMax = -numeric_limits<double>::infinity();
-        double inMin = numeric_limits<double>::infinity();
-        double inMax = -numeric_limits<double>::infinity();
-
-        for (int nid : nodes) {
-            double val = T[nid];
-            if (!isfinite(val)) continue;
-            overallMin = min(overallMin, val);
-            overallMax = max(overallMax, val);
-            int bc = grid.nodes[nid].BC;
-            if (bc == 1) { outMin = min(outMin, val); outMax = max(outMax, val); }
-            else if (bc == 2) { inMin = min(inMin, val); inMax = max(inMax, val); }
-        }
-
-
-
-
-
-        cout << "----------------------------------------\n";
-        cout << " Material: " << mat.name << "   (id=" << mat.id << ")\n";
-        cout << "----------------------------------------\n";
-
-        cout << left << setw(20) << "Overall Tmin:"
-            << (isfinite(overallMin) ? overallMin : NAN) << "\n";
-
-        cout << left << setw(20) << "Overall Tmax:"
-            << (isfinite(overallMax) ? overallMax : NAN) << "\n";
-
-        if (mat.id == 1) {
-            cout << left << setw(20) << "Temp OUT Tmin:"
-                << (isfinite(outMin) ? outMin : NAN) << "\n";
-
-            cout << left << setw(20) << "Temp OUT Tmax:"
-                << (isfinite(outMax) ? outMax : NAN) << "\n";
-        }
-        else if (mat.id == 3) {
-            cout << left << setw(20) << "Temp IN Tmin:"
-                << (isfinite(inMin) ? inMin : NAN) << "\n";
-
-            cout << left << setw(20) << "Temp IN Tmax:"
-                << (isfinite(inMax) ? inMax : NAN) << "\n";
-        }
-
-        cout << "----------------------------------------\n\n";
-
-
-        
-             
 
 
     }
-}
 
-
-
-    }
-    
 
     return 0;
 }

@@ -212,7 +212,7 @@ Elements number 90
 
 *Materials
 1, tynk, 0.7, 1800, 840
-2, styropian, 0.032, 35, 1400
+2, styropian, 0.032, 50, 1400
 3, cegla, 0.6, 1800, 840
 
 *ElementMat
