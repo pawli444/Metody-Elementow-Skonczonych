@@ -1,5 +1,5 @@
-SimulationTime 500
-SimulationStepTime 50
+SimulationTime 86400
+SimulationStepTime 3600
 AlfaIn 300
 AlfaOut 250
 InitialTemp 23
@@ -211,9 +211,9 @@ Elements number 90
  90,  98,  99, 110, 109
 
 *Materials
-1, tynk, 0.7, 1800, 840
-2, styropian, 0.032, 50, 1400
-3, cegla, 0.6, 1800, 840
+1, tynk, 1, 1800, 1000
+2, styropian, 0.040, 40, 1460
+3, cegla, 0.6, 1600, 840
 
 *ElementMat
 1, 1

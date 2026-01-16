@@ -1003,16 +1003,15 @@ int main() {
     //globalData.materialIdToIndex[3] = 2;
 
 
-    cout << endl << endl << endl << endl << endl << "wielkosc noway" << globalData.materials.size() << endl << endl << endl << endl << endl << endl;
 
     cout << "TotOut=" << globalData.TotOut << " TotIn=" << globalData.TotIn << "\n";
     cout << "AlfaOut=" << globalData.AlfaOut << " AlfaIn=" << globalData.AlfaIn << "\n";
     for (int i = 0; i < globalData.materials.size(); i++)
     {
         cout << endl << globalData.materials[i].name << endl;
-        cout << globalData.materials[i].conductivity << endl;
-        cout << globalData.materials[i].density << endl;
-        cout << globalData.materials[i].specificHeat << endl << endl << endl;
+        cout << "conductivity " << globalData.materials[i].conductivity << endl;
+        cout << "density " << globalData.materials[i].density << endl;
+        cout << "specificHeat " << globalData.materials[i].specificHeat << endl << endl << endl;
     }
 
     for (auto& e : grid.elements) {
@@ -1060,11 +1059,6 @@ int main() {
     int npc = eUniv.npc;
     Surface surface(globalData.npc);
 
-    cout << "Element 1 nodes:\n";
-    for (int i = 0; i < 4; i++) {
-        int id = grid.elements[0].ID[i] - 1;
-        cout << grid.nodes[id].x << " " << grid.nodes[id].y << endl;
-    }
 
 
 
@@ -1164,11 +1158,7 @@ int main() {
 
         elem.obliczP(surface, grid, globalData.AlfaOut, globalData.AlfaIn, globalData.TotOut, globalData.TotIn);
 
-        if (elem.id <= 10 || elem.id > 80) {  // elementy brzegowe
-            cout << "Element " << elem.id << " P = [";
-            for (int i = 0; i < 4; i++) cout << elem.P[i] << " ";
-            cout << "]\n";
-        }
+
 
         // Wypisz wektor P elementu
        // cout << "\nWektor P elementu " << elem.id << ":\n";

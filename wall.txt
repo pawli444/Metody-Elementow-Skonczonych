@@ -1,7 +1,8 @@
-SimulationTime 500
-SimulationStepTime 1
+SimulationTime 86400
+SimulationStepTime 3600
 AlfaIn 300
 AlfaOut 250
+InitialTemp 23
 TotOut 0
 TotIn 23
 Nodes number 10403
