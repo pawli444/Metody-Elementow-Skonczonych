@@ -9,13 +9,7 @@
 #include <cctype>
 using namespace std;
 
-/*
-  Zmieniona implementacja FEM (ró¿na wewnêtrzna organizacja),
-  ale zachowuj¹ca te same klasy: GaussQuadrature, ElemUniv, Element, Jakobian, Grid, GlobalData, Node.
-  Funkcje ksztaltu i ich pochodne s¹ zdefiniowane poza klas¹ ElemUniv.
-*/
 
-// ---------------------- pomocnicze operacje na stringach ----------------------
 
 string strip(const string& s) {
     size_t a = s.find_first_not_of(" \t\r\n");
@@ -35,12 +29,12 @@ vector<string> splitCSV(const string& line) {
     return tokens;
 }
 
-// bezpieczne parsowanie liczby (double)
+
 bool safeParseDouble(const string& s, double& out) {
     try {
         size_t idx = 0;
         out = stod(s, &idx);
-        // akceptuj tylko jeœli parsowanie pokry³o cokolwiek
+
         return idx > 0;
     }
     catch (...) {
@@ -48,7 +42,7 @@ bool safeParseDouble(const string& s, double& out) {
     }
 }
 
-// znajdŸ pierwsz¹ liczbê (u¿ywane do linii typu "SimulationTime = 10")
+
 bool findFirstNumberInLine(const string& line, double& val) {
     for (size_t i = 0; i < line.size(); ++i) {
         if ((line[i] >= '0' && line[i] <= '9') || line[i] == '-' || line[i] == '+' || line[i] == '.') {
@@ -59,7 +53,7 @@ bool findFirstNumberInLine(const string& line, double& val) {
     return false;
 }
 
-// ---------------------- klasy podstawowe (nazwy zachowane) ----------------------
+
 
 class GaussQuadrature {
 public:
@@ -109,8 +103,7 @@ public:
     }
 };
 
-// ElemUniv bêdzie przechowywaæ tylko npc i obiekt Gaussa.
-// Funkcje ksztaltu i dN dE/dN bêd¹ poza klas¹ (zgodnie z ¿yczeniem).
+
 class ElemUniv {
 public:
     int npc;
@@ -132,7 +125,7 @@ public:
     vector<int> boundaryList;
     int nN = 0;
     int nE = 0;
-    vector<struct Element> elems; // forward reference - zainicjujemy poni¿ej
+    vector<struct Element> elems; 
 };
 
 class Jakobian {
@@ -149,11 +142,10 @@ public:
         for (int k = 0; k < 4; k++) { dN_dx[k] = dN_dy[k] = 0.0; }
     }
 
-    // konstruktor liczacy na podstawie wezlow i pochodnych naturalnych
     Jakobian(const array<double, 4>& xcoords, const array<double, 4>& ycoords,
         const array<double, 4>& dN_dE, const array<double, 4>& dN_dN)
     {
-        // wype³nij J = [ dx/dE  dy/dE ; dx/dN dy/dN ]
+
         J[0][0] = J[0][1] = J[1][0] = J[1][1] = 0.0;
         for (int i = 0; i < 4; i++) {
             J[0][0] += dN_dE[i] * xcoords[i];
@@ -163,8 +155,7 @@ public:
         }
         det = J[0][0] * J[1][1] - J[1][0] * J[0][1];
         if (fabs(det) < 1e-14) {
-            cerr << "Uwaga: detJ bliskie zero (" << det << "). Mozliwy zdegenerowany element.\n";
-            // dla bezpieczenstwa ustawimy pewna wartosc niezerowa (program dalej liczy, ale wynik moze byc zly)
+
         }
         invJ[0][0] = J[1][1] / det;
         invJ[0][1] = -J[0][1] / det;
@@ -191,9 +182,9 @@ public:
 
 struct Element {
     int id = 0;
-    int nodeIDs[4] = { 0,0,0,0 }; // numeracja zgodna z plikiem
-    vector<Jakobian> jacobians; // dla kazdego punktu calkowania
-    double Hmat[4][4]; // lokalna macierz H
+    int nodeIDs[4] = { 0,0,0,0 };
+    vector<Jakobian> jacobians; 
+    double Hmat[4][4];
 
     Element() {
         for (int i = 0; i < 4; i++) for (int j = 0; j < 4; j++) Hmat[i][j] = 0.0;
@@ -203,30 +194,30 @@ struct Element {
         const vector<array<double, 4>>& naturalDerivativesE,
         const vector<array<double, 4>>& naturalDerivativesN)
     {
-        // przygotuj wspolrzedne wezlow elementu
+       
         array<double, 4> xs, ys;
         for (int i = 0; i < 4; i++) {
-            int nid = nodeIDs[i] - 1; // plik 1-based
+            int nid = nodeIDs[i] - 1; 
             xs[i] = g.nodeList[nid].x;
             ys[i] = g.nodeList[nid].y;
         }
 
         int np = eU.npc * eU.npc;
-        // zapewnij, ze jacobians ma odpowiedni rozmiar
+      
         if ((int)jacobians.size() != np) jacobians.resize(np);
 
-        // liczymy H = integral( conductivity * (B^T * B) * detJ ) po punktach Gaussa
+        
         for (int p = 0; p < np; p++) {
-            // u¿ywamy przekazanych naturalnych pochodnych dla odpowiedniego punktu p
+          
             const array<double, 4>& dN_dE_p = naturalDerivativesE[p];
             const array<double, 4>& dN_dN_p = naturalDerivativesN[p];
 
             Jakobian J(xs, ys, dN_dE_p, dN_dN_p);
             jacobians[p] = J;
 
-            // pobierz wagi
-            int i = p % eU.npc; // indeks xi
-            int j = p / eU.npc; // indeks eta
+       
+            int i = p % eU.npc;
+            int j = p / eU.npc; 
             double wx = eU.quad.w[i];
             double wy = eU.quad.w[j];
             double weight = wx * wy;
@@ -265,12 +256,10 @@ public:
     double SpecificHeat = 0.0;
     int nN = 0;
     int nE = 0;
-    int npc = 2; // default
+    int npc = 2; 
 };
 
-// ---------------------- funkcje ksztaltu i pochodnych (zewnatrz ElemUniv) ----------------------
 
-// N: kolejnoœæ N1..N4
 void shapeFunctionsQuad(double ksi, double eta, array<double, 4>& N) {
     N[0] = 0.25 * (1.0 - ksi) * (1.0 - eta);
     N[1] = 0.25 * (1.0 + ksi) * (1.0 - eta);
@@ -290,7 +279,7 @@ void shapeDerivativesNatural(double ksi, double eta, array<double, 4>& dN_dE, ar
     dN_dN[3] = 0.25 * (1.0 - ksi);
 }
 
-// Przygotowanie wszystkich funkcji pochodnych dla wszystkich punktow Gaussa (zwraca wektory rozmiaru npc*npc)
+
 void prepareNaturalDerivatives(const ElemUniv& eU,
     vector<array<double, 4>>& derivativesE,
     vector<array<double, 4>>& derivativesN,
@@ -320,7 +309,7 @@ void prepareNaturalDerivatives(const ElemUniv& eU,
     }
 }
 
-// ---------------------- wczytywanie pliku (format podobny do oryginalnego) ----------------------
+
 
 bool loadFromFile(const string& filename, GlobalData& G, Grid& grid) {
     ifstream in(filename);
@@ -336,7 +325,7 @@ bool loadFromFile(const string& filename, GlobalData& G, Grid& grid) {
         string t = strip(line);
         if (t.empty()) continue;
 
-        // sekcje globalne
+       
         if (t.find("SimulationTime") != string::npos) {
             double v; if (findFirstNumberInLine(t, v)) G.SimulationTime = v; continue;
         }
@@ -368,7 +357,7 @@ bool loadFromFile(const string& filename, GlobalData& G, Grid& grid) {
             double v; if (findFirstNumberInLine(t, v)) G.nE = static_cast<int>(v); continue;
         }
 
-        // sekcje blokowe
+       
         if (t.find("*Node") != string::npos) { inNodes = true; inElems = false; inBC = false; continue; }
         if (t.find("*Element") != string::npos) { inElems = true; inNodes = false; inBC = false; continue; }
         if (t.find("*BC") != string::npos) { inBC = true; inNodes = false; inElems = false; continue; }
@@ -419,7 +408,7 @@ bool loadFromFile(const string& filename, GlobalData& G, Grid& grid) {
                 }
             }
         }
-    } // while getline
+    } 
 
     grid.nN = (int)grid.nodeList.size();
     grid.nE = (int)grid.elems.size();
@@ -430,7 +419,7 @@ bool loadFromFile(const string& filename, GlobalData& G, Grid& grid) {
     return true;
 }
 
-// ---------------------- wypisywanie pomocnicze ----------------------
+
 
 void printGridSummary(const GlobalData& G, const Grid& grid) {
     cout << "Dane globalne:\n";
@@ -461,7 +450,7 @@ void printGridSummary(const GlobalData& G, const Grid& grid) {
     cout << "\n";
 }
 
-// ---------------------- main ----------------------
+
 
 int main() {
     ios::sync_with_stdio(false);
@@ -470,7 +459,7 @@ int main() {
     GlobalData G;
     Grid grid;
 
-    // pliki testowe tak jak w oryginale (uzyj indexu 3 domyslnie)
+
     vector<string> files = { "Test1_4_4.txt", "Test2_4_4MixGrid.txt", "Test3_31_31_kwadrat.txt", "Test4_testowe.txt" };
 
     if (!loadFromFile(files[3], G, grid)) {
@@ -479,17 +468,16 @@ int main() {
 
     printGridSummary(G, grid);
 
-    // przygotuj ElemUniv z npc z globaldata
+ 
     ElemUniv eU(G.npc);
 
-    // przygotuj pochodne naturalne i funkcje ksztaltu dla punktow Gaussa
+
     vector<array<double, 4>> dN_dE_all, dN_dN_all, N_all;
     prepareNaturalDerivatives(eU, dN_dE_all, dN_dN_all, N_all);
 
-    // wykonaj obliczenia dla kazdego elementu
     cout << fixed << setprecision(6);
     for (auto& el : grid.elems) {
-        // wypisz wspolrzedne wezlow elementu
+
         cout << "\nElement " << el.id << "\n";
         cout << "Node coords (N1..N4):\n";
         for (int k = 0; k < 4; k++) {
@@ -498,10 +486,9 @@ int main() {
                 << " (" << grid.nodeList[nid].x << ", " << grid.nodeList[nid].y << ")\n";
         }
 
-        // oblicz jacobiany i H
         el.computeH(eU, grid, G.Conductivity, dN_dE_all, dN_dN_all);
 
-        // dla kazdego punktu calkowania wypisz dane pomocnicze
+
         int np = eU.npc * eU.npc;
         for (int p = 0; p < np; p++) {
             double ksi = eU.quad.xi[p % eU.npc];
@@ -527,12 +514,12 @@ int main() {
             for (int a = 0; a < 4; a++) cout << setw(10) << J.dN_dy[a];
             cout << "\n";
 
-            // manualny test dN_dx[0]
+          
             double manual = J.invJ[0][0] * dN_dE_all[p][0] + J.invJ[0][1] * dN_dN_all[p][0];
             cout << " manual dN_dx[0] = " << manual << "\n";
         }
 
-        // wypisz macierz H elementu
+
         el.printH();
     }
 
