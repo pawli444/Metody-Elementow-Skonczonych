@@ -27,6 +27,12 @@
     <Text Include="Test4_testowe.txt">
       <Filter>Pliki zasobów</Filter>
     </Text>
+    <Text Include="wall.txt">
+      <Filter>Pliki zasobów</Filter>
+    </Text>
+    <Text Include="small.txt">
+      <Filter>Pliki zasobów</Filter>
+    </Text>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp">

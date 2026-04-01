@@ -127,10 +127,12 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <Text Include="small.txt" />
     <Text Include="Test1_4_4.txt" />
     <Text Include="Test2_4_4MixGrid.txt" />
     <Text Include="Test3_31_31_kwadrat.txt" />
     <Text Include="Test4_testowe.txt" />
+    <Text Include="wall.txt" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp" />
