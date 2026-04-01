@@ -1,7 +1,7 @@
 SimulationTime 86400
 SimulationStepTime 3600
-AlfaIn 300
-AlfaOut 250
+AlfaIn 8
+AlfaOut 25
 InitialTemp 23
 TotOut 0
 TotIn 23
